@@ -11,7 +11,7 @@ This is enforced at the protocol level. When you register an extension, you prov
 ```
 User (EOA)
   │
-  │  calls sendMyInstruction(message)
+  │  calls sendSayHello(message)
   ▼
 InstructionSender Contract (your code)
   │

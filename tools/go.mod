@@ -3,7 +3,6 @@ module extension-scaffold/tools
 go 1.25.1
 
 require (
-	extension-e2e v0.0.0
 	extension-scaffold v0.0.0
 	github.com/ethereum/go-ethereum v1.16.7
 	github.com/flare-foundation/go-flare-common v1.2.1-0.20251216163414-aec32d81603d
@@ -64,7 +63,6 @@ require (
 )
 
 replace (
-	extension-e2e => ../../../e2e/extension
 	extension-scaffold => ../
 	github.com/flare-foundation/tee-node => ../../../tee-node
 	github.com/flare-foundation/tee-proxy => ../../../tee-proxy

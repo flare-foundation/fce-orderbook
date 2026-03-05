@@ -28,11 +28,11 @@ Steps 1, 3, and 4 are the same for every extension. Steps 2 and 5 are what you c
 
 ## How to write tests for your extension
 
-The scaffold's test sends `{"message": "hello"}` via `SendMyInstruction` and logs the response. For your extension, you need to change both what you send and how you verify the result.
+The scaffold's test sends `{"name": "World"}` via `SendSayHello` and logs the response. For your extension, you need to change both what you send and how you verify the result.
 
 ### 1. Define your message and response types
 
-The scaffold has a placeholder `MyActionResponse`. Replace it with structs matching your extension:
+The scaffold has a placeholder `SayHelloResponse`. Replace it with structs matching your extension:
 
 ```go
 // What you send (JSON-encoded as the instruction payload)
@@ -51,11 +51,11 @@ type TransferResponse struct {
 
 ### 2. Send your instructions
 
-Replace the `SendInstruction()` call with your own contract function. The scaffold calls `SendMyInstruction(bytes)`, but your contract will have different functions:
+Replace the `SendInstruction()` call with your own contract function. The scaffold calls `SendSayHello(bytes)`, but your contract will have different functions:
 
 ```go
 // Scaffold example (replace this):
-payload, _ := json.Marshal(map[string]string{"message": "hello"})
+payload, _ := json.Marshal(map[string]string{"name": "World"})
 instructionId, _, err := instrutils.SendInstruction(s, addr, payload)
 
 // Your extension (something like):

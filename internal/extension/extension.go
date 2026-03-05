@@ -18,18 +18,12 @@ import (
 	"github.com/flare-foundation/tee-node/pkg/processorutils"
 )
 
-// --- CUSTOMIZE: Add your extension's state fields here. ---
-// These fields hold your extension's in-memory state. They are returned
-// by the GET /state endpoint and should reflect the cumulative result
-// of all processed actions. Protect access with the mu mutex.
-
 type Extension struct {
 	mu     sync.RWMutex
 	Server *http.Server
 
-	// TODO: Add your state fields here. For example:
-	// orderCount int
-	// lastOrder  string
+	greetingCount int
+	lastGreeting  string
 }
 
 // --- DO NOT MODIFY: New(), stateHandler(), actionHandler() are boilerplate. ---
@@ -50,9 +44,8 @@ func (e *Extension) stateHandler(w http.ResponseWriter, r *http.Request) {
 	stateResponse := types.StateResponse{
 		StateVersion: teeutils.ToHash(config.Version),
 		State: types.State{
-			// TODO: Return your state fields here. For example:
-			// OrderCount: e.orderCount,
-			// LastOrder:  e.lastOrder,
+			GreetingCount: e.greetingCount,
+			LastGreeting:  e.lastGreeting,
 		},
 	}
 	e.mu.RUnlock()
@@ -82,16 +75,6 @@ func (e *Extension) actionHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// --- CUSTOMIZE: processAction() is the routing layer for your extension. ---
-//
-// This function receives every action from the TEE node and routes it to
-// the correct handler based on the OPType field. Add a case for each
-// operation type your extension supports.
-//
-// The OPType is a bytes32 hash. Use teeutils.ToHash("YOUR_OP_TYPE") to
-// match against the constant defined in config.go (which must also match
-// the bytes32 constant in your Solidity contract).
-
 func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
 	dataFixed, err := processorutils.Parse[instruction.DataFixed](action.Data.Message)
 	if err != nil {
@@ -99,37 +82,19 @@ func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
 	}
 
 	switch {
-	case dataFixed.OPType == teeutils.ToHash(config.OPTypeMyAction):
-		ar := e.processMyAction(action, dataFixed)
+	case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):
+		ar := e.processSayHello(action, dataFixed)
 		b, _ := json.Marshal(ar)
 		return http.StatusOK, b
-
-	// TODO: Add more cases for additional operation types. For example:
-	// case dataFixed.OPType == teeutils.ToHash(config.OPTypeAnotherAction):
-	//     ar := e.processAnotherAction(action, dataFixed)
-	//     b, _ := json.Marshal(ar)
-	//     return http.StatusOK, b
 
 	default:
 		return http.StatusNotImplemented, []byte("unsupported op type")
 	}
 }
 
-// --- CUSTOMIZE: Implement your action handlers below. ---
-//
-// Each handler follows the same pattern:
-//   1. Decode the incoming message from df.OriginalMessage into your request type
-//   2. Validate the request
-//   3. Execute your business logic (this is where your extension does its work)
-//   4. Build a response and return it via buildResult()
-//
-// Status codes for buildResult:
-//   0 = error (include the error in the err parameter)
-//   1 = success (include the response data)
-
-func (e *Extension) processMyAction(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
-	// Step 1: Decode the incoming message.
-	var req types.MyActionRequest
+// processSayHello handles SAY_HELLO instructions: returns a greeting and tracks count.
+func (e *Extension) processSayHello(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
+	var req types.SayHelloRequest
 	dec := json.NewDecoder(bytes.NewReader(df.OriginalMessage))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(&req)
@@ -137,34 +102,22 @@ func (e *Extension) processMyAction(action teetypes.Action, df *instruction.Data
 		return buildResult(action, df, nil, 0, fmt.Errorf("decoding request: %w", err))
 	}
 
-	// Step 2: Validate the request.
-	// TODO: Add your validation logic here. For example:
-	// if req.Amount == 0 {
-	//     return buildResult(action, df, nil, 0, fmt.Errorf("amount must be greater than zero"))
-	// }
+	if req.Name == "" {
+		return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
+	}
 
-	// Step 3: Execute your business logic.
-	// TODO: This is the core of your extension. Implement your logic here.
-	// Examples of what extensions might do:
-	//   - Call external APIs or services
-	//   - Use the TEE's signing capabilities (via the sign port)
-	//   - Perform computations on confidential data
-	//   - Manage encrypted state
+	e.mu.Lock()
+	e.greetingCount++
+	greetingNumber := e.greetingCount
+	greeting := fmt.Sprintf("Hello, %s! Welcome to Flare Confidential Compute.", req.Name)
+	e.lastGreeting = greeting
+	e.mu.Unlock()
 
-	// Step 4: Build and return the response.
-	resp := types.MyActionResponse{
-		// TODO: Populate your response fields here. For example:
-		// TxHash: "0x...",
-		// Status: "confirmed",
+	resp := types.SayHelloResponse{
+		Greeting:       greeting,
+		GreetingNumber: greetingNumber,
 	}
 	data, _ := json.Marshal(resp)
-
-	// Update extension state (protected by mutex).
-	e.mu.Lock()
-	// TODO: Update your state fields here. For example:
-	// e.orderCount++
-	// e.lastOrder = req.OrderID
-	e.mu.Unlock()
 
 	return buildResult(action, df, data, 1, nil)
 }

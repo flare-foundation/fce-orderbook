@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/hex"
 	"flag"
-	"extension-e2e/configs"
-	"extension-e2e/pkg/support"
-	"extension-e2e/pkg/utils"
+	"extension-scaffold/tools/pkg/configs"
+	"extension-scaffold/tools/pkg/fccutils"
+	"extension-scaffold/tools/pkg/support"
 
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 )
@@ -23,35 +23,35 @@ func main() {
 
 	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	// get teeID from proxy
-	teeInfo, err := utils.TeeInfo(*pf)
+	teeInfo, err := fccutils.TeeInfo(*pf)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
-	teeID, _, err := utils.TeeProxyId(teeInfo)
+	teeID, _, err := fccutils.TeeProxyId(teeInfo)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
-	ftdcTeeID, _, err := utils.GetTeeProxyID(*epf)
+	ftdcTeeID, _, err := fccutils.GetTeeProxyID(*epf)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	// to check if things are ok
-	_, _, err = utils.GetCodeHashAndPlatform(teeInfo, *lf)
+	_, _, err = fccutils.GetCodeHashAndPlatform(teeInfo, *lf)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	logger.Infof("Registration of TEE with ID %s", hex.EncodeToString(teeID[:]))
-	err = utils.RegisterNode(testSupport, teeInfo, *pf, *epf, ftdcTeeID, *command, *instructionF)
+	err = fccutils.RegisterNode(testSupport, teeInfo, *pf, *epf, ftdcTeeID, *command, *instructionF)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	logger.Infof("Registered TEE node with id %s", teeID)

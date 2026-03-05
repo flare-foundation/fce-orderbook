@@ -68,7 +68,7 @@ If the Solidity contract has multiple send functions (e.g., `sendPlaceOrder()`, 
 
 ```go
 func SendPlaceOrder(s *utils.Session, addr common.Address, message []byte) (*big.Int, *ethtypes.Transaction, error) {
-    instance, err := myextension.NewMyExtensionInstructionSender(addr, s.Client)
+    instance, err := helloworld.NewHelloWorldInstructionSender(addr, s.Client)
     if err != nil {
         return nil, nil, fmt.Errorf("creating contract instance: %w", err)
     }

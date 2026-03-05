@@ -4,9 +4,9 @@ import (
 	"context"
 	"math/big"
 
-	"extension-scaffold/tools/pkg/contracts/myextension"
+	"extension-scaffold/tools/pkg/contracts/helloworld"
 
-	"extension-e2e/pkg/support"
+	"extension-scaffold/tools/pkg/support"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -14,13 +14,13 @@ import (
 	"github.com/pkg/errors"
 )
 
-func DeployInstructionSender(s *support.Support) (common.Address, *myextension.MyExtensionInstructionSender, error) {
+func DeployInstructionSender(s *support.Support) (common.Address, *helloworld.HelloWorldInstructionSender, error) {
 	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
 	if err != nil {
 		return common.Address{}, nil, errors.Errorf("failed to create transactor: %s", err)
 	}
 
-	address, tx, contract, err := myextension.DeployMyExtensionInstructionSender(
+	address, tx, contract, err := helloworld.DeployHelloWorldInstructionSender(
 		opts, s.ChainClient, s.Addresses.TeeExtensionRegistry, s.Addresses.TeeMachineRegistry,
 	)
 	if err != nil {
@@ -40,7 +40,7 @@ func DeployInstructionSender(s *support.Support) (common.Address, *myextension.M
 }
 
 func SetExtensionId(s *support.Support, instructionSenderAddress common.Address) error {
-	sender, err := myextension.NewMyExtensionInstructionSender(instructionSenderAddress, s.ChainClient)
+	sender, err := helloworld.NewHelloWorldInstructionSender(instructionSenderAddress, s.ChainClient)
 	if err != nil {
 		return errors.Errorf("failed to bind contract: %s", err)
 	}
@@ -68,7 +68,7 @@ func SetExtensionId(s *support.Support, instructionSenderAddress common.Address)
 }
 
 func SendInstruction(s *support.Support, instructionSenderAddress common.Address, message []byte) (common.Hash, common.Hash, error) {
-	sender, err := myextension.NewMyExtensionInstructionSender(instructionSenderAddress, s.ChainClient)
+	sender, err := helloworld.NewHelloWorldInstructionSender(instructionSenderAddress, s.ChainClient)
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to bind contract: %s", err)
 	}
@@ -79,7 +79,7 @@ func SendInstruction(s *support.Support, instructionSenderAddress common.Address
 	}
 	opts.Value = big.NewInt(1000000)
 
-	tx, err := sender.SendMyInstruction(opts, message)
+	tx, err := sender.SendSayHello(opts, message)
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send instruction: %s", err)
 	}

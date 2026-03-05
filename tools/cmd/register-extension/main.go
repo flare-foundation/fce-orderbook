@@ -4,9 +4,9 @@ import (
 	"flag"
 	"fmt"
 
-	"extension-e2e/configs"
-	"extension-e2e/pkg/support"
-	extutils "extension-e2e/pkg/utils"
+	"extension-scaffold/tools/pkg/configs"
+	"extension-scaffold/tools/pkg/fccutils"
+	"extension-scaffold/tools/pkg/support"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
@@ -25,16 +25,16 @@ func main() {
 
 	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
-		extutils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	governanceHash := common.HexToHash(*governanceHashF)
 	instructionSenderAddress := common.HexToAddress(*instructionSenderF)
 
 	logger.Infof("Registering extension with InstructionSender %s...", instructionSenderAddress.Hex())
-	extensionID, err := extutils.SetupExtension(testSupport, governanceHash, instructionSenderAddress, common.Address{})
+	extensionID, err := fccutils.SetupExtension(testSupport, governanceHash, instructionSenderAddress, common.Address{})
 	if err != nil {
-		extutils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	extensionIDHex := fmt.Sprintf("0x%064x", extensionID)

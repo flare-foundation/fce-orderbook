@@ -4,9 +4,9 @@ import (
 	"crypto/ecdsa"
 	"flag"
 	"os"
-	"extension-e2e/configs"
-	"extension-e2e/pkg/support"
-	"extension-e2e/pkg/utils"
+	"extension-scaffold/tools/pkg/configs"
+	"extension-scaffold/tools/pkg/fccutils"
+	"extension-scaffold/tools/pkg/support"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,13 +22,13 @@ func main() {
 
 	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	// get teeID from proxy
-	teeInfo, err := utils.TeeInfo(*pf)
+	teeInfo, err := fccutils.TeeInfo(*pf)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	var privKey *ecdsa.PrivateKey
@@ -36,20 +36,20 @@ func main() {
 	if privKeyString != "" {
 		privKey, err = crypto.HexToECDSA(privKeyString)
 		if err != nil {
-			utils.FatalWithCause(err)
+			fccutils.FatalWithCause(err)
 		}
 	} else {
 		privKey = testSupport.Prv
 	}
 
-	teeID, _, err := utils.TeeProxyId(teeInfo)
+	teeID, _, err := fccutils.TeeProxyId(teeInfo)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	logger.Infof("registering version: %s, %s, extension: %v tee id: %s", teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, teeInfo.MachineData.ExtensionID.Big(), teeID)
-	err = utils.AddTeeVersion(testSupport, privKey, teeInfo.MachineData.ExtensionID.Big(), teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, common.Hash{}, *versionF)
+	err = fccutils.AddTeeVersion(testSupport, privKey, teeInfo.MachineData.ExtensionID.Big(), teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, common.Hash{}, *versionF)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 }

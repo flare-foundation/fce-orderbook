@@ -10,14 +10,7 @@ import (
 const (
 	Version = "0.1.0"
 
-	// --- CUSTOMIZE: Define your operation type constants here. ---
-	// Each constant must match a bytes32 value in your Solidity contract.
-	// Example: if your contract has `bytes32 constant OP_TYPE_PLACE_ORDER = bytes32("PLACE_ORDER")`,
-	// add `OPTypePlaceOrder = "PLACE_ORDER"` here.
-	//
-	// The scaffold ships with one placeholder. Replace or extend it with your own.
-	OPTypeMyAction = "MY_ACTION"
-	// OPTypeAnotherAction = "ANOTHER_ACTION"
+	OPTypeSayHello = "SAY_HELLO"
 
 	TimeoutShutdown = 5 * time.Second
 )

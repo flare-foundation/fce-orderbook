@@ -233,7 +233,7 @@ processAction()
     │  parses DataFixed from action.Data.Message
     │  routes based on dataFixed.OPType
     ▼
-processMyAction()
+processSayHello()
     │
     │  decodes YOUR request type from df.OriginalMessage
     │  executes YOUR logic

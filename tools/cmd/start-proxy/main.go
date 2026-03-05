@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"extension-e2e/pkg/utils"
+	"extension-scaffold/tools/pkg/fccutils"
 
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	proxyConfig "github.com/flare-foundation/tee-proxy/pkg/config"
@@ -65,7 +65,7 @@ func logProxyAndTeeIds(configFile string) error {
 
 	proxyURL := fmt.Sprintf("http://localhost:%s", config.Ports.External)
 
-	teeID, proxyID, err := utils.GetTeeProxyID(proxyURL)
+	teeID, proxyID, err := fccutils.GetTeeProxyID(proxyURL)
 	if err != nil {
 		return fmt.Errorf("failed to extract teeID and proxyID: %w", err)
 	}

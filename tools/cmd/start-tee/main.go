@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"extension-e2e/pkg/utils"
+	"extension-scaffold/tools/pkg/fccutils"
 	echoserver "extension-scaffold/pkg/server"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -64,9 +64,9 @@ func runExtension() {
 
 	time.Sleep(250 * time.Millisecond)
 
-	err := utils.SetProxyUrl(ExtConfigurationPort, ExtProxyInternalPort)
+	err := fccutils.SetProxyUrl(ExtConfigurationPort, ExtProxyInternalPort)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 }
 
@@ -85,7 +85,7 @@ func setOwnerAddress() common.Address {
 		} else {
 			privKey, err = crypto.HexToECDSA(privKeyString)
 			if err != nil {
-				utils.FatalWithCause(err)
+				fccutils.FatalWithCause(err)
 			}
 		}
 

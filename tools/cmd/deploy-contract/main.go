@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"extension-e2e/configs"
-	"extension-e2e/pkg/support"
-	"extension-e2e/pkg/utils"
+	"extension-scaffold/tools/pkg/configs"
+	"extension-scaffold/tools/pkg/fccutils"
+	"extension-scaffold/tools/pkg/support"
 	instrutils "extension-scaffold/tools/pkg/utils"
 
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
@@ -22,13 +22,13 @@ func main() {
 
 	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	logger.Infof("Deploying InstructionSender contract...")
 	address, _, err := instrutils.DeployInstructionSender(testSupport)
 	if err != nil {
-		utils.FatalWithCause(err)
+		fccutils.FatalWithCause(err)
 	}
 
 	logger.Infof("InstructionSender deployed at: %s", address.Hex())
