@@ -4,6 +4,13 @@ out/
 cache/
 .DS_Store
 
+# Compiled Go binaries
+tools/start-*
+tools/allow-*
+tools/deploy-*
+tools/register-*
+tools/run-*
+
 # Generated contract bindings (produced by scripts/generate-bindings.sh)
 tools/pkg/contracts/*/autogen.go
 tools/pkg/contracts/*/*.abi

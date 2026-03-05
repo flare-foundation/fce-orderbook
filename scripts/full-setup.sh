@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
-# full-setup.sh — Run the complete extension lifecycle: pre-build → post-build → test.
+# full-setup.sh — Run the complete extension lifecycle: pre-build → start → post-build → test.
 #
 # Usage:
-#   ./scripts/full-setup.sh          # pre-build + post-build only
-#   ./scripts/full-setup.sh --test   # pre-build + post-build + test
+#   ./scripts/full-setup.sh          # setup only (steps 1-6)
+#   ./scripts/full-setup.sh --test   # setup + run e2e test (steps 1-7)
 #
-# This does NOT start Docker services. The extension TEE + proxy must be running
-# before post-build.sh can succeed. Typical workflow:
-#
-#   1. Start infrastructure (e.g., from e2e/extension: make docker-up && make docker-wait)
-#   2. Run: ./scripts/full-setup.sh --test
-#      - pre-build.sh deploys contract + registers extension
-#      - You start the extension TEE + proxy (pointing at your EXTENSION_ID)
-#      - post-build.sh waits for services, then registers TEE version + machine
-#      - test.sh sends instructions and verifies results
+# Prerequisites:
+#   - Infrastructure running (Hardhat, indexer, Redis on :6380, normal TEE + proxy)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[full-setup]${NC} $*"; }
 die()  { echo -e "${RED}[full-setup] ERROR:${NC} $*" >&2; exit 1; }
 
@@ -30,32 +23,30 @@ for arg in "$@"; do
     esac
 done
 
-# --- Phase 1: Pre-build ---
+# --- Phase 1: Pre-build (deploy contract, register extension) ---
 echo -e "\n${CYAN}╔══════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║  Phase 1: Pre-build                  ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
 "$SCRIPT_DIR/pre-build.sh" || die "Pre-build failed"
 
-# --- Pause: ensure services are running ---
-echo ""
-echo -e "${YELLOW}────────────────────────────────────────${NC}"
-echo -e "${YELLOW} Ensure the extension TEE + proxy are running before continuing.${NC}"
-echo -e "${YELLOW} The EXTENSION_ID from pre-build must be set on the TEE.${NC}"
-echo -e "${YELLOW}────────────────────────────────────────${NC}"
-echo ""
-echo -e "Press ${CYAN}Enter${NC} to continue once services are ready..."
-read -r
-
-# --- Phase 2: Post-build ---
+# --- Phase 2: Start services (TEE node + proxy) ---
+# TEMPORARY: Uses go run via background processes.
+# Will be replaced by `docker compose up` once the Dockerfile is added.
 echo -e "\n${CYAN}╔══════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║  Phase 2: Post-build                 ║${NC}"
+echo -e "${CYAN}║  Phase 2: Start services             ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
+"$SCRIPT_DIR/start-services.sh" || die "Failed to start services"
+
+# --- Phase 3: Post-build (register TEE version + machine) ---
+echo -e "\n${CYAN}╔══════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║  Phase 3: Post-build                 ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
 "$SCRIPT_DIR/post-build.sh" || die "Post-build failed"
 
-# --- Phase 3: Test (optional) ---
+# --- Phase 4: Test (optional) ---
 if [[ "$RUN_TESTS" == "true" ]]; then
     echo -e "\n${CYAN}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║  Phase 3: Test                       ║${NC}"
+    echo -e "${CYAN}║  Phase 4: Test                       ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
     "$SCRIPT_DIR/test.sh" || die "Tests failed"
 fi
@@ -67,3 +58,5 @@ if [[ "$RUN_TESTS" == "true" ]]; then
     echo -e "${GREEN} (including tests)${NC}"
 fi
 echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "${CYAN}Stop services:${NC}  ./scripts/stop-services.sh"

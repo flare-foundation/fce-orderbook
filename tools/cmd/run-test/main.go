@@ -15,16 +15,15 @@ import (
 	"github.com/pkg/errors"
 )
 
-// =============================================================================
-// ★ EXTENSION-SPECIFIC: Define your response types here.
-//
-// The scaffold's example uses a simple message-in/message-out pattern.
-// Replace this with your own response struct(s) matching what your
-// extension's processAction handler returns via buildResult.
-// =============================================================================
+// --- CUSTOMIZE: Define your response types here. ---
+// These must match the types your extension returns in ActionResult.Data.
+// See pkg/types/types.go for the corresponding request/response definitions.
 
 type MyActionResponse struct {
-	Message string `json:"message"`
+	// TODO: Add fields matching your types.MyActionResponse.
+	// Example:
+	//   TxHash string `json:"txHash"`
+	//   Status string `json:"status"`
 }
 
 func main() {
@@ -49,21 +48,26 @@ func main() {
 		logger.Warnf("setExtensionId failed (may already be set): %s", err)
 	}
 
-	// =========================================================================
-	// ★ EXTENSION-SPECIFIC: Your test cases below.
+	// --- CUSTOMIZE: Your test cases below. ------------------------------------
 	//
-	// The scaffold shows ONE example: send a JSON message via SendInstruction(),
-	// wait for TEE processing, then verify the result.
+	// Each test case follows the same pattern:
+	//   1. Build your JSON payload (matching your request type)
+	//   2. Send it via instrutils.SendInstruction()
+	//   3. Wait for TEE processing
+	//   4. Verify the result
 	//
-	// For YOUR extension, replace with:
-	//   1. YOUR message payload structs (instead of {"message": "hello"})
-	//   2. YOUR contract function calls (instead of SendMyInstruction)
-	//   3. Multiple test cases covering each of YOUR op types
-	// =========================================================================
+	// The scaffold shows one placeholder test. Replace the payload and
+	// verification with your own logic, and add more test cases as needed.
 
 	// --- Test case 1: Send a MY_ACTION instruction ---
-	logger.Infof("Sending MY_ACTION instruction (message='hello')...")
-	payload, err := json.Marshal(map[string]string{"message": "hello"})
+	logger.Infof("Sending MY_ACTION instruction...")
+
+	// TODO: Build your actual test payload here.
+	payload, err := json.Marshal(map[string]interface{}{
+		// "from":   "0x...",
+		// "to":     "0x...",
+		// "amount": 100,
+	})
 	if err != nil {
 		utils.FatalWithCause(err)
 	}
@@ -82,32 +86,26 @@ func main() {
 	}
 	logger.Infof("Test passed: MY_ACTION instruction processed successfully")
 
+	// TODO: Add more test cases for each operation type your extension supports.
+	// --- Test case 2: ... ---
+
 	logger.Infof("All tests passed.")
 }
 
-// =============================================================================
-// ★ EXTENSION-SPECIFIC: Replace this with your own verification logic.
+// --- CUSTOMIZE: Replace the unmarshalling and validation below. ---
 //
-// The generic part is:
-//   - utils.ActionResult() polls the proxy and returns *types.ActionResponse
-//   - ActionResponse.Result.Status: 0=failed, 1=success, 2=pending
-//   - ActionResponse.Result.Data contains YOUR extension's JSON response
-//
-// You must:
-//   1. Define your response struct (see MyActionResponse above)
-//   2. Unmarshal actionResult.Data into it
-//   3. Validate the fields match your expectations
-// =============================================================================
+// The generic part (polling the proxy, checking status) stays the same.
+// You customize the part that unmarshals ActionResult.Data into your
+// response type and validates the fields.
 
 func verifyResult(proxyURL string, instructionId common.Hash) error {
-	// --- Generic: poll proxy for result ---
+	// --- Generic: poll proxy for result (do not modify) ---
 	actionResponse, err := utils.ActionResult(proxyURL, instructionId)
 	if err != nil {
 		return err
 	}
 	actionResult := actionResponse.Result
 
-	// --- Generic: check processing status ---
 	if actionResult.Status == 0 {
 		return errors.Errorf("instruction processing failed: %s", actionResult.Log)
 	}
@@ -119,14 +117,18 @@ func verifyResult(proxyURL string, instructionId common.Hash) error {
 		return errors.New("expected response data but got none")
 	}
 
-	// ★ CUSTOM: unmarshal into YOUR response type
+	// --- CUSTOMIZE: unmarshal and validate your response ---
 	var resp MyActionResponse
 	err = json.Unmarshal(actionResult.Data, &resp)
 	if err != nil {
 		return errors.Errorf("failed to unmarshal response: %s", err)
 	}
 
-	// ★ CUSTOM: validate YOUR specific fields
+	// TODO: Add assertions for your response fields. For example:
+	// if resp.TxHash == "" {
+	//     return errors.New("expected non-empty TxHash")
+	// }
+
 	logger.Infof("Response data: %+v", resp)
 
 	return nil

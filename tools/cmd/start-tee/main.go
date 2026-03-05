@@ -1,0 +1,97 @@
+// TEMPORARY: This command starts the extension TEE node and extension server
+// as Go processes. It will be replaced by a Docker container once the Dockerfile
+// is implemented. See EXTENSION-TEMPLATE-SPEC.md §5 for the Docker approach.
+package main
+
+import (
+	"crypto/ecdsa"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"extension-e2e/pkg/utils"
+	echoserver "extension-scaffold/pkg/server"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/flare-foundation/go-flare-common/pkg/logger"
+	teeServer "github.com/flare-foundation/tee-node/pkg/server"
+	"github.com/joho/godotenv"
+)
+
+// Port constants matching the extension-e2e configs.
+const (
+	ExtConfigurationPort = 5501 // TEE configuration port (proxyURL, initialOwner, extensionID)
+	ExtProxyInternalPort = 6663 // Internal port: TEE polls actions from proxy queue
+	ExtensionServerPort  = 7701 // TEE signing port: extension calls TEE for signing/encrypting
+	ExtensionPort        = 7702 // Extension server port: TEE forwards POST /action here
+)
+
+func main() {
+	extensionID := flag.String("extensionID", "", "extension ID (bytes32 hex)")
+	flag.Parse()
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	if err := godotenv.Load(); err != nil {
+		fmt.Printf("Warning: Error loading .env file: %v\n", err)
+	}
+
+	_ = setOwnerAddress()
+
+	if *extensionID != "" {
+		os.Setenv("EXTENSION_ID", *extensionID)
+	}
+
+	runExtension()
+
+	sig := <-signalChan
+	logger.Infof("Received %v signal, shutting down", sig)
+}
+
+func runExtension() {
+	// Start tee-node in extension mode.
+	go teeServer.StartServerExtension(ExtConfigurationPort, ExtensionServerPort, ExtensionPort)
+
+	// Start echo extension server.
+	echoserver.StartExtension(ExtensionPort, ExtensionServerPort)
+
+	logger.Infof("Starting echo extension TEE on port %d", ExtConfigurationPort)
+
+	time.Sleep(250 * time.Millisecond)
+
+	err := utils.SetProxyUrl(ExtConfigurationPort, ExtProxyInternalPort)
+	if err != nil {
+		utils.FatalWithCause(err)
+	}
+}
+
+func setOwnerAddress() common.Address {
+	owner := os.Getenv("INITIAL_OWNER")
+	if owner == "" {
+		var privKey *ecdsa.PrivateKey
+		var err error
+		privKeyString := os.Getenv("PRIV_KEY")
+		if privKeyString == "" {
+			// Default Hardhat-funded key.
+			privKey, err = crypto.HexToECDSA("804b01a8c27a65cc694a867be76edae3ccce7a7161cda1f67a8349df696d2207")
+			if err != nil {
+				panic("cannot parse default private key")
+			}
+		} else {
+			privKey, err = crypto.HexToECDSA(privKeyString)
+			if err != nil {
+				utils.FatalWithCause(err)
+			}
+		}
+
+		ownerAddress := crypto.PubkeyToAddress(privKey.PublicKey)
+		os.Setenv("INITIAL_OWNER", ownerAddress.String())
+	}
+
+	return common.HexToAddress(owner)
+}
