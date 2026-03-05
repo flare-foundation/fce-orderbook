@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { ITeeExtensionRegistry } from "flare-smart-contracts-v2/contracts/userInterfaces/tee/ITeeExtensionRegistry.sol";
-import { ITeeMachineRegistry } from "flare-smart-contracts-v2/contracts/userInterfaces/tee/ITeeMachineRegistry.sol";
+// TODO: Replace local interfaces with imports from flare-smart-contracts-v2 once published as a package.
+import { ITeeExtensionRegistry } from "./interfaces/ITeeExtensionRegistry.sol";
+import { ITeeMachineRegistry } from "./interfaces/ITeeMachineRegistry.sol";
 
 /// @title MyExtensionInstructionSender
 /// @notice On-chain entry point for sending instructions to your extension's TEE.
@@ -17,8 +18,8 @@ import { ITeeMachineRegistry } from "flare-smart-contracts-v2/contracts/userInte
 contract MyExtensionInstructionSender {
     uint256 _extensionId;
 
-    ITeeExtensionRegistry public immutable teeExtensionRegistry;
-    ITeeMachineRegistry public immutable teeMachineRegistry;
+    ITeeExtensionRegistry public immutable TEE_EXTENSION_REGISTRY;
+    ITeeMachineRegistry public immutable TEE_MACHINE_REGISTRY;
 
     // --- CUSTOMIZE: Define your operation types ---
     // Each OP_TYPE maps to a handler in your Go extension's processAction().
@@ -33,8 +34,8 @@ contract MyExtensionInstructionSender {
         ITeeExtensionRegistry _teeExtensionRegistry,
         ITeeMachineRegistry _teeMachineRegistry
     ) {
-        teeExtensionRegistry = _teeExtensionRegistry;
-        teeMachineRegistry = _teeMachineRegistry;
+        TEE_EXTENSION_REGISTRY = _teeExtensionRegistry;
+        TEE_MACHINE_REGISTRY = _teeMachineRegistry;
     }
 
     /// @notice Finds and sets this contract's extension id. Can only be set once.
@@ -42,9 +43,9 @@ contract MyExtensionInstructionSender {
     function setExtensionId() external {
         require(_extensionId == 0, "Extension ID already set.");
 
-        uint256 c = teeExtensionRegistry.extensionsCounter();
+        uint256 c = TEE_EXTENSION_REGISTRY.extensionsCounter();
         for (uint256 i = 0; i < c; ++i) {
-            if (teeExtensionRegistry.getTeeExtensionInstructionsSender(i) == address(this)) {
+            if (TEE_EXTENSION_REGISTRY.getTeeExtensionInstructionsSender(i) == address(this)) {
                 _extensionId = i;
                 return;
             }
@@ -55,11 +56,11 @@ contract MyExtensionInstructionSender {
     /// @notice CUSTOMIZE: Rename and add send functions for each action type.
     /// @param _message JSON-encoded payload matching your extension's expected format.
     function sendMyInstruction(bytes calldata _message) external payable {
-        address[] memory teeIds = teeMachineRegistry.getRandomTeeIds(_getExtensionId(), 1);
+        address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
         address[] memory cosigners = new address[](0);
         uint64 cosignersThreshold = 0;
 
-        teeExtensionRegistry.sendInstructions{value: msg.value}(
+        TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
             teeIds,
             OP_TYPE_MY_ACTION,
             OP_COMMAND_PLACEHOLDER,

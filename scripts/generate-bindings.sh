@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # generate-bindings.sh — Compile Solidity contracts and generate Go bindings.
 #
-# Prerequisites: forge (Foundry), abigen (go-ethereum), jq
+# Prerequisites: forge (Foundry), jq
 #
 # Usage: ./scripts/generate-bindings.sh
 set -euo pipefail

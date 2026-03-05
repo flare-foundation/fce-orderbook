@@ -18,6 +18,13 @@ log()  { echo -e "${GREEN}[pre-build]${NC} $*"; }
 step() { echo -e "\n${CYAN}=== Step $1: $2 ===${NC}"; }
 die()  { echo -e "${RED}[pre-build] ERROR:${NC} $*" >&2; exit 1; }
 
+# --- Load .env from project root (if present) ---
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 CONFIG_OUTPUT="$PROJECT_DIR/config/extension.env"

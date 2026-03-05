@@ -51,10 +51,10 @@ mv tools/pkg/contracts/orderbook/myextension.go tools/pkg/contracts/orderbook/or
 Update the directive inside:
 ```go
 // Before:
-//go:generate abigen --abi MyExtensionInstructionSender.abi --bin MyExtensionInstructionSender.bin --pkg myextension --type MyExtensionInstructionSender --out autogen.go
+//go:generate go run github.com/ethereum/go-ethereum/cmd/abigen --abi MyExtensionInstructionSender.abi --bin MyExtensionInstructionSender.bin --pkg myextension --type MyExtensionInstructionSender --out autogen.go
 
 // After:
-//go:generate abigen --abi OrderbookInstructionSender.abi --bin OrderbookInstructionSender.bin --pkg orderbook --type OrderbookInstructionSender --out autogen.go
+//go:generate go run github.com/ethereum/go-ethereum/cmd/abigen --abi OrderbookInstructionSender.abi --bin OrderbookInstructionSender.bin --pkg orderbook --type OrderbookInstructionSender --out autogen.go
 ```
 
 ## 5. Update Go imports

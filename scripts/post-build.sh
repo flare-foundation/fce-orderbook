@@ -4,7 +4,7 @@
 # Run this AFTER Docker Compose brings up the extension TEE + proxy + Redis.
 #
 # Inputs (env vars):
-#   EXT_PROXY_URL       — extension proxy URL (default: http://localhost:6664)
+#   EXT_PROXY_URL       — extension proxy URL (default: http://localhost:6674)
 #   NORMAL_PROXY_URL    — normal/FTDC proxy URL (default: http://localhost:6662)
 #   CHAIN_URL           — chain RPC URL (default: http://127.0.0.1:8545)
 #   ADDRESSES_FILE      — path to deployed-addresses.json (auto-detected if unset)
@@ -22,7 +22,14 @@ log()  { echo -e "${GREEN}[post-build]${NC} $*"; }
 step() { echo -e "\n${CYAN}=== Step $1: $2 ===${NC}"; }
 die()  { echo -e "${RED}[post-build] ERROR:${NC} $*" >&2; exit 1; }
 
-EXT_PROXY_URL="${EXT_PROXY_URL:-http://localhost:6664}"
+# --- Load .env from project root (if present) ---
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
+EXT_PROXY_URL="${EXT_PROXY_URL:-http://localhost:6674}"
 NORMAL_PROXY_URL="${NORMAL_PROXY_URL:-http://localhost:6662}"
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"

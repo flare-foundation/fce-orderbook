@@ -89,7 +89,7 @@ Inside `tools/pkg/contracts/{GO_PKG}/`:
 
 2. Read the renamed file and update its contents. The final file should be:
    ```go
-   //go:generate abigen --abi={CONTRACT_NAME}.abi --bin={CONTRACT_NAME}.bin --pkg={GO_PKG} --type={CONTRACT_NAME} --out=autogen.go
+   //go:generate go run github.com/ethereum/go-ethereum/cmd/abigen --abi={CONTRACT_NAME}.abi --bin={CONTRACT_NAME}.bin --pkg={GO_PKG} --type={CONTRACT_NAME} --out=autogen.go
 
    package {GO_PKG}
    ```
