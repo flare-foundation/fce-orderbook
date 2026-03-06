@@ -14,12 +14,17 @@ func main() {
 	af := flag.String("a", configs.AddressesFile, "file with deployed addresses")
 	cf := flag.String("c", configs.ChainNodeURL, "chain node url")
 	pf := flag.String("p", configs.ExtensionProxyURL, "extension proxy url")
+	rpf := flag.String("rp", "", "registration proxy url (on-chain, defaults to -p)")
 	epf := flag.String("ep", "http://localhost:6662", "external proxy url (for FTDC)")
 	lf := flag.Bool("l", false, "local")
 	instructionF := flag.String("i", "", "instructionID")
 	command := flag.String("command", "rap", "command (rap)")
 
 	flag.Parse()
+
+	if *rpf == "" {
+		*rpf = *pf
+	}
 
 	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
@@ -49,7 +54,7 @@ func main() {
 	}
 
 	logger.Infof("Registration of TEE with ID %s", hex.EncodeToString(teeID[:]))
-	err = fccutils.RegisterNode(testSupport, teeInfo, *pf, *epf, ftdcTeeID, *command, *instructionF)
+	err = fccutils.RegisterNode(testSupport, teeInfo, *rpf, *epf, ftdcTeeID, *command, *instructionF)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}

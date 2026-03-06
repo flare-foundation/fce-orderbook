@@ -58,7 +58,8 @@ A working Hello World example for building Flare Confidential Compute (FCC) exte
 | `PRIVATE_KEY` | Hardhat dev key | Proxy signing key (used by start-services) |
 | `EXTENSION_ID` | from `config/extension.env` | Extension ID (bytes32 hex, set by pre-build) |
 | `INITIAL_OWNER` | derived from `PRIV_KEY` | Initial contract owner address |
-| `EXT_PROXY_URL` | `http://localhost:6664` | Extension proxy URL (post-build, test) |
+| `EXT_PROXY_URL` | `http://localhost:6674` | Extension proxy URL (post-build, test) |
+| `REG_PROXY_URL` | `http://ext-proxy:6664` | On-chain registration URL for ext proxy (Docker-internal) |
 | `NORMAL_PROXY_URL` | `http://localhost:6662` | Normal/FTDC proxy URL (post-build) |
 | `EXTENSION_OWNER_KEY` | (empty, falls back to `PRIV_KEY`) | Private key override for AddTeeVersion |
 | `TEE_VERSION` | `v0.1.0` | Version string for TEE registration |
@@ -211,7 +212,8 @@ cd tools && go run ./cmd/allow-tee-version \
 # Register TEE machine
 cd tools && go run ./cmd/register-tee \
   -a /path/to/deployed-addresses.json \
-  -p http://localhost:6664 \
+  -p http://localhost:6674 \
+  -rp http://ext-proxy:6664 \
   -ep http://localhost:6662 \
   -l
 ```
