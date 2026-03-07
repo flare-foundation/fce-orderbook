@@ -34,7 +34,7 @@ services:
   extension-tee:
     build:
       context: ../..
-      dockerfile: extensions/extension-scaffold/Dockerfile
+      dockerfile: extension-examples/extension-scaffold/Dockerfile
     env_file:
       - path: ./config/extension.env
         required: false

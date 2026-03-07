@@ -5,7 +5,6 @@
 #
 # Inputs (env vars):
 #   EXT_PROXY_URL       — extension proxy URL (default: http://localhost:6674)
-#   REG_PROXY_URL       — on-chain registration URL for ext proxy (default: http://ext-proxy:6664)
 #   NORMAL_PROXY_URL    — normal/FTDC proxy URL (default: http://localhost:6662)
 #   CHAIN_URL           — chain RPC URL (default: http://127.0.0.1:8545)
 #   ADDRESSES_FILE      — path to deployed-addresses.json (auto-detected if unset)
@@ -31,7 +30,6 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
 fi
 
 EXT_PROXY_URL="${EXT_PROXY_URL:-http://localhost:6674}"
-REG_PROXY_URL="${REG_PROXY_URL:-http://ext-proxy:6664}"
 NORMAL_PROXY_URL="${NORMAL_PROXY_URL:-http://localhost:6662}"
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
@@ -57,7 +55,6 @@ fi
 [[ -f "$ADDRESSES_FILE" ]] || die "Addresses file not found: $ADDRESSES_FILE"
 
 log "Extension proxy: $EXT_PROXY_URL"
-log "Reg proxy (chain): $REG_PROXY_URL"
 log "Normal proxy:    $NORMAL_PROXY_URL"
 log "Chain URL:       $CHAIN_URL"
 log "Addresses file:  $ADDRESSES_FILE"
@@ -109,7 +106,6 @@ go run ./cmd/register-tee \
     -a "$ADDRESSES_FILE" \
     -c "$CHAIN_URL" \
     -p "$EXT_PROXY_URL" \
-    -rp "$REG_PROXY_URL" \
     -ep "$NORMAL_PROXY_URL" \
     $LOCAL_FLAG \
     || die "Register TEE failed"
