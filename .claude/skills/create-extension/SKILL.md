@@ -14,7 +14,7 @@ The user wants to implement their extension logic: define operations, write hand
 ## Inputs
 
 The skill needs to know what **operation(s)** the extension should support. For each operation, gather:
-- **Name** (e.g., "PlaceOrder", "Transfer", "Swap")
+- **Name** (e.g., "SayHello", "Transfer", "Swap")
 - **Description** — what it does
 - **Request fields** — what the user sends (JSON payload)
 - **Response fields** — what the extension returns
@@ -31,62 +31,62 @@ All paths are relative to the scaffold root (the directory containing `foundry.t
 
 ### Step 1: Add OPType constant(s) in `internal/config/config.go`
 
-Read the file first. Add one constant per operation:
+Read the file first. Add one constant per operation. The scaffold ships with:
 
 ```go
 const (
-    OPTypePlaceOrder  = "PLACE_ORDER"
-    OPTypeCancelOrder = "CANCEL_ORDER"
+    OPTypeSayHello = "SAY_HELLO"
 )
 ```
 
-Use UPPER_SNAKE_CASE for the string values. These strings must exactly match the `bytes32` constants you'll add in Solidity.
+Use UPPER_SNAKE_CASE for the string values. These strings must exactly match the `bytes32` constants you'll add in Solidity. Replace or add to the existing constant(s) based on what the user wants.
 
 ### Step 2: Define request/response/state types in `pkg/types/types.go`
 
-Read the file first. Add structs for each operation's request and response, plus update the State struct:
+Read the file first. Add structs for each operation's request and response, plus update the State struct. The scaffold ships with:
 
 ```go
 // Request — decoded from df.OriginalMessage
-type PlaceOrderRequest struct {
-    Symbol string  `json:"symbol"`
-    Side   string  `json:"side"`
-    Amount float64 `json:"amount"`
-    Price  float64 `json:"price"`
+type SayHelloRequest struct {
+    Name string `json:"name"`
 }
 
 // Response — returned in ActionResult.Data
-type PlaceOrderResponse struct {
-    OrderID string `json:"orderId"`
-    Status  string `json:"status"`
+type SayHelloResponse struct {
+    Greeting       string `json:"greeting"`
+    GreetingNumber int    `json:"greetingNumber"`
 }
 
 // State — returned by GET /state
 type State struct {
-    TotalOrders int    `json:"totalOrders"`
-    LastOrderID string `json:"lastOrderId"`
+    GreetingCount int    `json:"greetingCount"`
+    LastGreeting  string `json:"lastGreeting"`
 }
 ```
 
+Replace these with the user's types, following the same pattern.
+
 ### Step 3: Add case(s) in `processAction()` router in `internal/extension/extension.go`
 
-Read the file first. Add a `case` in the `switch` block for each new operation:
+Read the file first. Add a `case` in the `switch` block for each new operation. The scaffold has:
 
 ```go
-case dataFixed.OPType == teeutils.ToHash(config.OPTypePlaceOrder):
-    ar := e.processPlaceOrder(action, dataFixed)
+case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):
+    ar := e.processSayHello(action, dataFixed)
     b, _ := json.Marshal(ar)
     return http.StatusOK, b
 ```
 
+Replace or add cases following this pattern.
+
 ### Step 4: Write handler function(s) following the 4-step pattern
 
-Each handler follows this exact pattern:
+Each handler follows this exact pattern. The scaffold's handler:
 
 ```go
-func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
+func (e *Extension) processSayHello(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
     // 1. Decode the incoming message
-    var req types.PlaceOrderRequest
+    var req types.SayHelloRequest
     dec := json.NewDecoder(bytes.NewReader(df.OriginalMessage))
     dec.DisallowUnknownFields()
     err := dec.Decode(&req)
@@ -95,21 +95,24 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
     }
 
     // 2. Validate
-    if req.Amount <= 0 {
-        return buildResult(action, df, nil, 0, fmt.Errorf("amount must be positive"))
+    if req.Name == "" {
+        return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
     }
 
     // 3. Execute business logic
-    orderID := generateOrderID()
-    // ... your logic here ...
+    e.mu.Lock()
+    e.greetingCount++
+    greetingNumber := e.greetingCount
+    greeting := fmt.Sprintf("Hello, %s! Welcome to Flare Confidential Compute.", req.Name)
+    e.lastGreeting = greeting
+    e.mu.Unlock()
 
     // 4. Build response
-    resp := types.PlaceOrderResponse{OrderID: orderID, Status: "placed"}
+    resp := types.SayHelloResponse{
+        Greeting:       greeting,
+        GreetingNumber: greetingNumber,
+    }
     data, _ := json.Marshal(resp)
-
-    e.mu.Lock()
-    e.totalOrders++
-    e.mu.Unlock()
 
     return buildResult(action, df, data, 1, nil)
 }
@@ -125,24 +128,35 @@ Add state fields to the `Extension` struct and wire them into `stateHandler()` v
 
 ```go
 e.mu.Lock()
-e.orderBook[order.ID] = order
-e.totalOrders++
+e.greetingCount++
+e.lastGreeting = greeting
 e.mu.Unlock()
 ```
 
 ### Step 6: Add Solidity constant(s) and send function(s) in `contracts/InstructionSender.sol`
 
-Read the file first. Add a `bytes32` constant for each operation and a send function:
+Read the file first. The scaffold has:
 
 ```solidity
-bytes32 constant OP_TYPE_PLACE_ORDER = bytes32("PLACE_ORDER");
+bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
 
-function sendPlaceOrder(bytes calldata _message) external payable {
-    _sendInstruction(OP_TYPE_PLACE_ORDER, bytes32(0), _message);
+function sendSayHello(bytes calldata _message) external payable {
+    address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
+    address[] memory cosigners = new address[](0);
+    uint64 cosignersThreshold = 0;
+
+    TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
+        teeIds,
+        OP_TYPE_SAY_HELLO,
+        OP_COMMAND_PLACEHOLDER,
+        _message,
+        cosigners,
+        cosignersThreshold
+    );
 }
 ```
 
-The OPType string in Solidity (`"PLACE_ORDER"`) must **exactly match** the Go constant (`OPTypePlaceOrder = "PLACE_ORDER"`).
+The OPType string in Solidity must **exactly match** the Go constant. Replace or add constants and send functions following this pattern.
 
 ### Step 7: Regenerate bindings
 
@@ -202,6 +216,6 @@ If both succeed, all imports and type references are correct. Report the result 
 
 - **Do NOT modify infrastructure code** — functions like `buildResult()`, `actionHandler()`, `stateHandler()` (the generic parts), and files in `cmd/main.go`, `pkg/server/` are boilerplate marked "DO NOT MODIFY".
 - **Always read each file before editing** to confirm current content.
-- **OPType strings must match exactly** across Solidity (`bytes32("PLACE_ORDER")`) and Go (`OPTypePlaceOrder = "PLACE_ORDER"`). If they don't match, actions will fall through to the `default` case and return "unsupported op type".
+- **OPType strings must match exactly** across Solidity and Go. If they don't match, actions will fall through to the `default` case and return "unsupported op type".
 - **Run `./scripts/generate-bindings.sh`** after any Solidity changes.
 - Use `replace_all: true` when replacing identifiers that appear multiple times in a file.

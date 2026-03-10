@@ -51,20 +51,19 @@ The provided `InstructionSender.sol` is a ready-to-use starting point. It handle
 
 **Define your operation types** as `bytes32` constants:
 ```solidity
-bytes32 constant OP_TYPE_PLACE_ORDER = bytes32("PLACE_ORDER");
-bytes32 constant OP_TYPE_CANCEL_ORDER = bytes32("CANCEL_ORDER");
+bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
 ```
 
 **Add a send function per action:**
 ```solidity
-function sendPlaceOrder(bytes calldata _message) external payable {
-    address[] memory teeIds = teeMachineRegistry.getRandomTeeIds(_getExtensionId(), 1);
+function sendSayHello(bytes calldata _message) external payable {
+    address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
     address[] memory cosigners = new address[](0);
     uint64 cosignersThreshold = 0;
 
-    teeExtensionRegistry.sendInstructions{value: msg.value}(
+    TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
         teeIds,
-        OP_TYPE_PLACE_ORDER,
+        OP_TYPE_SAY_HELLO,
         OP_COMMAND_PLACEHOLDER,
         _message,
         cosigners,
@@ -73,7 +72,7 @@ function sendPlaceOrder(bytes calldata _message) external payable {
 }
 ```
 
-Each `OP_TYPE` string must match what your Go extension expects. On the Go side, use `teeutils.ToHash("PLACE_ORDER")` to produce the matching `bytes32`.
+Each `OP_TYPE` string must match what your Go extension expects. On the Go side, use `teeutils.ToHash("SAY_HELLO")` to produce the matching `bytes32`.
 
 After modifying the contract, run `./scripts/generate-bindings.sh` to regenerate the Go bindings.
 

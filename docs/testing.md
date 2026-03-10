@@ -26,44 +26,35 @@ The test runner (`tools/cmd/run-test/main.go`) executes this lifecycle:
 
 Steps 1, 3, and 4 are the same for every extension. Steps 2 and 5 are what you customize.
 
-## How to write tests for your extension
+## How the scaffold test works
 
-The scaffold's test sends `{"name": "World"}` via `SendSayHello` and logs the response. For your extension, you need to change both what you send and how you verify the result.
+The scaffold's test sends `{"name": "World"}` via `sendSayHello` and verifies the greeting response. Here's how each part works — when you build your own extension, you'll replace these with your own types, payloads, and assertions.
 
 ### 1. Define your message and response types
 
-The scaffold has a placeholder `SayHelloResponse`. Replace it with structs matching your extension:
+The scaffold defines `SayHelloResponse` at the top of the test file, mirroring the type from `pkg/types/types.go`:
 
 ```go
-// What you send (JSON-encoded as the instruction payload)
-type TransferRequest struct {
-    From   string `json:"from"`
-    To     string `json:"to"`
-    Amount uint64 `json:"amount"`
-}
-
-// What your extension returns (in ActionResult.Data)
-type TransferResponse struct {
-    TxHash string `json:"txHash"`
-    Status string `json:"status"`
+type SayHelloResponse struct {
+    Greeting       string `json:"greeting"`
+    GreetingNumber int    `json:"greetingNumber"`
 }
 ```
+
+Replace this with structs matching your extension's response types. These are defined separately in the test file because the test tool module is independent from the main extension module.
 
 ### 2. Send your instructions
 
-Replace the `SendInstruction()` call with your own contract function. The scaffold calls `SendSayHello(bytes)`, but your contract will have different functions:
+The scaffold builds a JSON payload and sends it through the contract:
 
 ```go
-// Scaffold example (replace this):
-payload, _ := json.Marshal(map[string]string{"name": "World"})
-instructionId, _, err := instrutils.SendInstruction(s, addr, payload)
-
-// Your extension (something like):
-payload, _ := json.Marshal(TransferRequest{From: "...", To: "...", Amount: 100})
+payload, _ := json.Marshal(map[string]interface{}{
+    "name": "World",
+})
 instructionId, _, err := instrutils.SendInstruction(s, addr, payload)
 ```
 
-If your Solidity contract has multiple send functions (e.g. `sendTransfer()`, `sendSwap()`), you'll need to add corresponding Go helpers in `tools/pkg/utils/instructions.go` and call them here.
+Replace the payload with whatever your contract function expects. If your Solidity contract has multiple send functions, you'll need to add corresponding Go helpers in `tools/pkg/utils/instructions.go` and call them here.
 
 ### 3. Validate your responses
 
@@ -86,24 +77,24 @@ The `verifyResult` function receives the raw response from the proxy. The respon
 - `log`: error message when `status == 0`
 - `data`: your extension's response bytes — this is whatever your `processAction` handler returned via `buildResult`
 
-The generic status checks are already in `verifyResult`. You customize the part that unmarshals and validates `data`:
+The generic status checks are already in `verifyResult`. The scaffold validates the SAY_HELLO response like this:
 
 ```go
-// ★ CUSTOM: unmarshal into YOUR response type
-var resp TransferResponse
+var resp SayHelloResponse
 err = json.Unmarshal(actionResult.Data, &resp)
 if err != nil {
     return errors.Errorf("failed to unmarshal response: %s", err)
 }
 
-// ★ CUSTOM: validate YOUR specific fields
-if resp.TxHash == "" {
-    return errors.New("expected non-empty TxHash")
+if resp.Greeting == "" {
+    return errors.New("expected non-empty Greeting")
 }
-if resp.Status != "confirmed" {
-    return errors.Errorf("expected status 'confirmed', got %q", resp.Status)
+if resp.GreetingNumber < 1 {
+    return errors.Errorf("expected GreetingNumber >= 1, got %d", resp.GreetingNumber)
 }
 ```
+
+Replace the response type, unmarshal target, and field assertions with your own.
 
 ### 4. Add more test cases
 
@@ -119,17 +110,17 @@ The scaffold shows a single send+verify pair. For a real extension, add multiple
 Your Solidity contract defines op types as `bytes32` constants:
 
 ```solidity
-bytes32 constant OP_TYPE_PLACE_ORDER = bytes32("PLACE_ORDER");
+bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
 ```
 
 Your Go extension's `processAction` routes on the same value:
 
 ```go
-case dataFixed.OPType == teeutils.ToHash("PLACE_ORDER"):
-    return e.handlePlaceOrder(action, dataFixed)
+case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):
+    return e.processSayHello(action, dataFixed)
 ```
 
-The test sends instructions through the contract function that uses that op type, and verifies the response matches what `handlePlaceOrder` returns.
+The test sends instructions through the contract function that uses that op type (`sendSayHello`), and verifies the response matches what `processSayHello` returns.
 
 ## What you need to change (summary)
 

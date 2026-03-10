@@ -27,12 +27,12 @@ All paths are relative to the scaffold root (the directory containing `foundry.t
 
 ### Step 1: Define response type(s) at top of `tools/cmd/run-test/main.go`
 
-Read the file first. Add structs that **mirror** (not import) your response types from `pkg/types/types.go`:
+Read the file first. Add structs that **mirror** (not import) your response types from `pkg/types/types.go`. The scaffold has:
 
 ```go
-type PlaceOrderResponse struct {
-    OrderID string `json:"orderId"`
-    Status  string `json:"status"`
+type SayHelloResponse struct {
+    Greeting       string `json:"greeting"`
+    GreetingNumber int    `json:"greetingNumber"`
 }
 ```
 
@@ -40,14 +40,11 @@ These are defined separately in the test file because the test tool module is in
 
 ### Step 2: Build test payload(s) matching request types
 
-Create JSON payloads matching your request types from `pkg/types/types.go`:
+Create JSON payloads matching your request types from `pkg/types/types.go`. The scaffold sends:
 
 ```go
-payload, _ := json.Marshal(PlaceOrderRequest{
-    Symbol: "BTC/USD",
-    Side:   "buy",
-    Amount: 1.5,
-    Price:  50000,
+payload, _ := json.Marshal(map[string]interface{}{
+    "name": "World",
 })
 ```
 
@@ -64,15 +61,15 @@ if err != nil {
 }
 ```
 
-If the Solidity contract has multiple send functions (e.g., `sendPlaceOrder()`, `sendCancelOrder()`), you'll need corresponding Go helpers in `tools/pkg/utils/instructions.go`. Each helper calls a different contract method:
+If the Solidity contract has multiple send functions (e.g., `sendSayHello()` plus additional operations you've added), you'll need corresponding Go helpers in `tools/pkg/utils/instructions.go`. Each helper calls a different contract method:
 
 ```go
-func SendPlaceOrder(s *utils.Session, addr common.Address, message []byte) (*big.Int, *ethtypes.Transaction, error) {
+func SendSayHello(s *utils.Session, addr common.Address, message []byte) (*big.Int, *ethtypes.Transaction, error) {
     instance, err := helloworld.NewHelloWorldInstructionSender(addr, s.Client)
     if err != nil {
         return nil, nil, fmt.Errorf("creating contract instance: %w", err)
     }
-    tx, err := instance.SendPlaceOrder(s.Transactor, message)
+    tx, err := instance.SendSayHello(s.Transactor, message)
     if err != nil {
         return nil, nil, fmt.Errorf("sending instruction: %w", err)
     }
@@ -82,24 +79,24 @@ func SendPlaceOrder(s *utils.Session, addr common.Address, message []byte) (*big
 
 ### Step 4: Update `verifyResult()` — unmarshal and validate
 
-Read the current `verifyResult()` function. The generic parts (polling, status checks) are already there. Add your custom validation at the marked section:
+Read the current `verifyResult()` function. The generic parts (polling, status checks) are already there. The scaffold validates like this:
 
 ```go
-// Unmarshal into YOUR response type
-var resp PlaceOrderResponse
+var resp SayHelloResponse
 err = json.Unmarshal(actionResult.Data, &resp)
 if err != nil {
     return errors.Errorf("failed to unmarshal response: %s", err)
 }
 
-// Validate YOUR specific fields
-if resp.OrderID == "" {
-    return errors.New("expected non-empty OrderID")
+if resp.Greeting == "" {
+    return errors.New("expected non-empty Greeting")
 }
-if resp.Status != "placed" {
-    return errors.Errorf("expected status 'placed', got %q", resp.Status)
+if resp.GreetingNumber < 1 {
+    return errors.Errorf("expected GreetingNumber >= 1, got %d", resp.GreetingNumber)
 }
 ```
+
+Replace the response type, unmarshal target, and field assertions with your own.
 
 ### Step 5: Add additional test cases
 

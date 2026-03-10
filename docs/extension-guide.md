@@ -51,20 +51,18 @@ Your extension controls steps 1 (the contract) and 6 (the action handler). Every
 
 This file defines the string constants for your operation types. Each constant is hashed to `bytes32` at runtime using `teeutils.ToHash()` and compared against the `OPType` field in incoming actions.
 
-**What to do:** Add one constant per operation your extension supports.
+**What to do:** Add one constant per operation your extension supports. The scaffold defines one:
 
 ```go
 const (
-    OPTypePlaceOrder  = "PLACE_ORDER"
-    OPTypeCancelOrder = "CANCEL_ORDER"
+    OPTypeSayHello = "SAY_HELLO"
 )
 ```
 
 These strings must exactly match the `bytes32` constants in your Solidity contract:
 
 ```solidity
-bytes32 constant OP_TYPE_PLACE_ORDER = bytes32("PLACE_ORDER");
-bytes32 constant OP_TYPE_CANCEL_ORDER = bytes32("CANCEL_ORDER");
+bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
 ```
 
 ### 2. `pkg/types/types.go` — Request and Response Types
@@ -77,25 +75,24 @@ This file defines the JSON structures for your extension's inputs and outputs.
 
 **State type** represents your extension's observable state, returned by `GET /state`. The TEE infrastructure uses this for state synchronization.
 
+The scaffold defines:
+
 ```go
 // What the user sends (via the Solidity contract)
-type PlaceOrderRequest struct {
-    Symbol string  `json:"symbol"`
-    Side   string  `json:"side"`
-    Amount float64 `json:"amount"`
-    Price  float64 `json:"price"`
+type SayHelloRequest struct {
+    Name string `json:"name"`
 }
 
 // What your extension returns
-type PlaceOrderResponse struct {
-    OrderID string `json:"orderId"`
-    Status  string `json:"status"`
+type SayHelloResponse struct {
+    Greeting       string `json:"greeting"`
+    GreetingNumber int    `json:"greetingNumber"`
 }
 
 // Your extension's cumulative state
 type State struct {
-    TotalOrders int    `json:"totalOrders"`
-    LastOrderID string `json:"lastOrderId"`
+    GreetingCount int    `json:"greetingCount"`
+    LastGreeting  string `json:"lastGreeting"`
 }
 ```
 
@@ -109,15 +106,15 @@ This is the main file. It contains:
 
 #### The Extension Struct
 
-Add fields to hold your extension's state. Always protect state access with the `mu` mutex.
+Add fields to hold your extension's state. Always protect state access with the `mu` mutex. The scaffold tracks greeting count and the last greeting sent:
 
 ```go
 type Extension struct {
     mu     sync.RWMutex
     Server *http.Server
 
-    orderBook  map[string]Order
-    totalOrders int
+    greetingCount int
+    lastGreeting  string
 }
 ```
 
@@ -133,13 +130,8 @@ func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
     }
 
     switch {
-    case dataFixed.OPType == teeutils.ToHash(config.OPTypePlaceOrder):
-        ar := e.processPlaceOrder(action, dataFixed)
-        b, _ := json.Marshal(ar)
-        return http.StatusOK, b
-
-    case dataFixed.OPType == teeutils.ToHash(config.OPTypeCancelOrder):
-        ar := e.processCancelOrder(action, dataFixed)
+    case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):
+        ar := e.processSayHello(action, dataFixed)
         b, _ := json.Marshal(ar)
         return http.StatusOK, b
 
@@ -151,12 +143,12 @@ func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
 
 #### Handler Functions
 
-Each handler follows the same 4-step pattern:
+Each handler follows the same 4-step pattern. Here's the scaffold's `processSayHello`:
 
 ```go
-func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
+func (e *Extension) processSayHello(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
     // 1. Decode the incoming message
-    var req types.PlaceOrderRequest
+    var req types.SayHelloRequest
     dec := json.NewDecoder(bytes.NewReader(df.OriginalMessage))
     dec.DisallowUnknownFields()
     err := dec.Decode(&req)
@@ -165,21 +157,24 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
     }
 
     // 2. Validate
-    if req.Amount <= 0 {
-        return buildResult(action, df, nil, 0, fmt.Errorf("amount must be positive"))
+    if req.Name == "" {
+        return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
     }
 
     // 3. Execute business logic
-    orderID := generateOrderID()
-    // ... your logic here ...
+    e.mu.Lock()
+    e.greetingCount++
+    greetingNumber := e.greetingCount
+    greeting := fmt.Sprintf("Hello, %s! Welcome to Flare Confidential Compute.", req.Name)
+    e.lastGreeting = greeting
+    e.mu.Unlock()
 
     // 4. Build response
-    resp := types.PlaceOrderResponse{OrderID: orderID, Status: "placed"}
+    resp := types.SayHelloResponse{
+        Greeting:       greeting,
+        GreetingNumber: greetingNumber,
+    }
     data, _ := json.Marshal(resp)
-
-    e.mu.Lock()
-    e.totalOrders++
-    e.mu.Unlock()
 
     return buildResult(action, df, data, 1, nil)
 }
@@ -207,9 +202,9 @@ The critical link between your Solidity contract and Go code is the **OPType str
 
 | Location | Example |
 |----------|---------|
-| Solidity contract | `bytes32 constant OP_TYPE_PLACE_ORDER = bytes32("PLACE_ORDER");` |
-| Go config | `OPTypePlaceOrder = "PLACE_ORDER"` |
-| Go router | `case dataFixed.OPType == teeutils.ToHash(config.OPTypePlaceOrder):` |
+| Solidity contract | `bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");` |
+| Go config | `OPTypeSayHello = "SAY_HELLO"` |
+| Go router | `case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):` |
 
 If these don't match, the action will fall through to the `default` case and return "unsupported op type".
 
@@ -235,9 +230,9 @@ processAction()
     ▼
 processSayHello()
     │
-    │  decodes YOUR request type from df.OriginalMessage
-    │  executes YOUR logic
-    │  returns ActionResult with YOUR response in Data field
+    │  decodes SayHelloRequest from df.OriginalMessage
+    │  executes greeting logic, increments counter
+    │  returns ActionResult with SayHelloResponse in Data field
     ▼
 buildResult() → JSON response → TEE node → proxy → caller
 ```
@@ -276,8 +271,8 @@ The sign port is available at `localhost:{SIGN_PORT}` from within the extension.
 Use `status = 0` in `buildResult`. The error message goes into `ActionResult.Log`:
 
 ```go
-if req.Amount <= 0 {
-    return buildResult(action, df, nil, 0, fmt.Errorf("invalid amount: %d", req.Amount))
+if req.Name == "" {
+    return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
 }
 ```
 
@@ -287,8 +282,8 @@ Add fields to the `Extension` struct and protect with the mutex:
 
 ```go
 e.mu.Lock()
-e.orderBook[order.ID] = order
-e.totalOrders++
+e.greetingCount++
+e.lastGreeting = greeting
 e.mu.Unlock()
 ```
 
