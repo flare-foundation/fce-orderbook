@@ -8,7 +8,9 @@ A working Hello World example for building Flare Confidential Compute (FCC) exte
 ├── cmd/main.go                        # ★ Extension server entry point (standalone, for dev)
 ├── internal/
 │   ├── config/config.go               # ★ OPType constants, version, port defaults
-│   └── extension/extension.go         # ★ MAIN CUSTOMIZATION POINT: processAction routing
+│   └── extension/
+│       ├── extension.go              # ★ MAIN CUSTOMIZATION POINT: processAction routing
+│       └── utils.go                  # Boilerplate: actionHandler, buildResult (no changes needed)
 ├── pkg/
 │   ├── server/server.go               # StartExtension() wrapper
 │   └── types/types.go                 # ★ Request/response types

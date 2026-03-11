@@ -261,7 +261,7 @@ The sign port is available at `localhost:{SIGN_PORT}` from within the extension.
 4. **Write the handler function** following the 4-step pattern
 5. **Add the Solidity constant and send function** in `contracts/InstructionSender.sol`
 6. **Regenerate bindings**: `./scripts/generate-bindings.sh`
-7. **Update the Go tooling** if the send function has a different signature (see `tools/pkg/utils/instructions.go`)
+7. **Update the Go tooling** — in `tools/pkg/utils/instructions.go`, update the import path from `helloworld` to your package, rename type references (e.g. `helloworld.DeployHelloWorldInstructionSender` → `orderbook.DeployOrderbookInstructionSender`, `helloworld.NewHelloWorldInstructionSender` → `orderbook.NewOrderbookInstructionSender`), and rename the send function call (e.g. `sender.SendSayHello` → `sender.SendPlaceOrder`) to match your new Solidity function name
 8. **Add a test case** in `tools/cmd/run-test/main.go`
 
 ## Common Patterns

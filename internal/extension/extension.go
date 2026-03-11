@@ -10,7 +10,6 @@ import (
 	"extension-scaffold/internal/config"
 	"extension-scaffold/pkg/types"
 
-	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	"github.com/flare-foundation/go-flare-common/pkg/tee/instruction"
 	teetypes "github.com/flare-foundation/tee-node/pkg/types"
 	teeutils "github.com/flare-foundation/tee-node/pkg/utils"
@@ -26,8 +25,7 @@ type Extension struct {
 	lastGreeting  string
 }
 
-// --- DO NOT MODIFY: New(), stateHandler(), actionHandler() are boilerplate. ---
-
+// --- DO NOT MODIFY: New(), actionHandler() are boilerplate.
 func New(extensionPort, signPort int) *Extension {
 	e := &Extension{}
 
@@ -39,6 +37,7 @@ func New(extensionPort, signPort int) *Extension {
 	return e
 }
 
+// stateHandler() structure is boilerplate but update the State field mapping to match your Extension fields.
 func (e *Extension) stateHandler(w http.ResponseWriter, r *http.Request) {
 	e.mu.RLock()
 	stateResponse := types.StateResponse{
@@ -55,24 +54,6 @@ func (e *Extension) stateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("sending response: %v", err), http.StatusInternalServerError)
 		return
 	}
-}
-
-func (e *Extension) actionHandler(w http.ResponseWriter, r *http.Request) {
-	var action teetypes.Action
-	err := json.NewDecoder(r.Body).Decode(&action)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("decoding action: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	logger.Infof("received action, ID: %s", action.Data.ID)
-
-	status, body := e.processAction(action)
-
-	logger.Infof("sending action result, ID: %s, status: %d, log: %s", action.Data.ID, status, getLogFromBody(body))
-
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
 }
 
 func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
@@ -120,33 +101,4 @@ func (e *Extension) processSayHello(action teetypes.Action, df *instruction.Data
 	data, _ := json.Marshal(resp)
 
 	return buildResult(action, df, data, 1, nil)
-}
-
-// --- DO NOT MODIFY below this line. ---
-
-func buildResult(a teetypes.Action, df *instruction.DataFixed, data []byte, status uint8, err error) teetypes.ActionResult {
-	ar := teetypes.ActionResult{
-		ID:            a.Data.ID,
-		SubmissionTag: a.Data.SubmissionTag,
-		Version:       config.Version,
-		OPType:        df.OPType,
-		OPCommand:     df.OPCommand,
-		Data:          data,
-		Status:        status,
-	}
-	switch status {
-	case 0:
-		ar.Log = fmt.Sprintf("error: %v", err)
-	case 1:
-		ar.Log = "ok"
-	}
-	return ar
-}
-
-func getLogFromBody(body []byte) string {
-	var ar teetypes.ActionResult
-	if err := json.Unmarshal(body, &ar); err != nil {
-		return string(body)
-	}
-	return ar.Log
 }
