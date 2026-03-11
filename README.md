@@ -8,7 +8,9 @@ A working Hello World example for building Flare Confidential Compute (FCC) exte
 ├── cmd/main.go                        # ★ Extension server entry point (standalone, for dev)
 ├── internal/
 │   ├── config/config.go               # ★ OPType constants, version, port defaults
-│   └── extension/extension.go         # ★ MAIN CUSTOMIZATION POINT: processAction routing
+│   └── extension/
+│       ├── extension.go              # ★ MAIN CUSTOMIZATION POINT: processAction routing
+│       └── utils.go                  # Boilerplate: actionHandler, buildResult (no changes needed)
 ├── pkg/
 │   ├── server/server.go               # StartExtension() wrapper
 │   └── types/types.go                 # ★ Request/response types
@@ -138,14 +140,6 @@ ADDRESSES_FILE=/path/to/deployed-addresses.json CHAIN_URL=http://your-node:8545 
 
 #### 2. Start services (Docker Compose)
 
-The proxy image (`tee-proxy`) is a shared dependency — eventually it will be published to a registry. For now, build it once from the `tee/` root:
-
-```bash
-cd tee/ && docker build -f tee-proxy/Dockerfile -t tee-proxy:latest .
-```
-
-Then start everything:
-
 ```bash
 docker compose up -d --build
 ```
@@ -236,6 +230,8 @@ COMPOSE_NETWORK=my_network docker compose up -d
 # Verbose logging
 LOG_LEVEL=DEBUG docker compose up -d
 ```
+
+> **Building the proxy image locally:** The `tee-proxy` image is pulled automatically. If you need to build it from source instead, run `docker build -f tee-proxy/Dockerfile -t tee-proxy:latest .` from the `tee/` root.
 
 ### Ports (local dev)
 

@@ -62,22 +62,19 @@ Update the directive inside:
 **File:** `tools/pkg/utils/instructions.go`
 ```go
 // Before:
-import "your-module/pkg/contracts/helloworld"
+import "your-module/tools/pkg/contracts/helloworld"
 // ... helloworld.DeployHelloWorldInstructionSender(...)
+// ... helloworld.NewHelloWorldInstructionSender(...)
+// ... sender.SendSayHello(opts, message)
 
 // After:
-import "your-module/pkg/contracts/orderbook"
+import "your-module/tools/pkg/contracts/orderbook"
 // ... orderbook.DeployOrderbookInstructionSender(...)
+// ... orderbook.NewOrderbookInstructionSender(...)
+// ... sender.SendPlaceOrder(opts, message)
 ```
 
-**File:** `tools/cmd/deploy-contract/main.go`
-```go
-// Before:
-import "your-module/pkg/contracts/helloworld"
-
-// After:
-import "your-module/pkg/contracts/orderbook"
-```
+Note: The `sender.SendSayHello()` call in `SendInstruction()` must also be renamed to match the new Solidity function name (e.g. `sendPlaceOrder` in Solidity becomes `sender.SendPlaceOrder` in the Go bindings).
 
 ## Summary checklist
 
@@ -87,4 +84,4 @@ import "your-module/pkg/contracts/orderbook"
 | 2 | Update script config | `scripts/generate-bindings.sh` | `CONTRACT_NAME` and `GO_PKG` variables |
 | 3 | Rename Go bindings directory | `tools/pkg/contracts/helloworld/` | Rename to match `GO_PKG` |
 | 4 | Update `go:generate` directive | `tools/pkg/contracts/<yourpkg>/*.go` | `--abi`, `--bin`, `--pkg`, `--type` flags |
-| 5 | Update Go imports | `tools/pkg/utils/instructions.go`, `tools/cmd/deploy-contract/main.go` | Import path + type names |
+| 5 | Update Go imports | `tools/pkg/utils/instructions.go` | Import path + type names + `SendSayHello` rename |
