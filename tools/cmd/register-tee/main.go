@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/hex"
-	"flag"
 	"extension-scaffold/tools/pkg/configs"
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/support"
+	"flag"
 
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 )
@@ -13,7 +13,8 @@ import (
 func main() {
 	af := flag.String("a", configs.AddressesFile, "file with deployed addresses")
 	cf := flag.String("c", configs.ChainNodeURL, "chain node url")
-	pf := flag.String("p", configs.ExtensionProxyURL, "extension proxy url")
+	pf := flag.String("p", configs.ExtensionProxyURL, "extension proxy url (used to query TEE info)")
+	hf := flag.String("h", "", "host url to register on-chain (defaults to -p if not set)")
 	epf := flag.String("ep", "http://localhost:6662", "external proxy url (for FTDC)")
 	lf := flag.Bool("l", false, "local")
 	instructionF := flag.String("i", "", "instructionID")
@@ -48,8 +49,13 @@ func main() {
 		fccutils.FatalWithCause(err)
 	}
 
+	hostURL := *hf
+	if hostURL == "" {
+		hostURL = *pf
+	}
+
 	logger.Infof("Registration of TEE with ID %s", hex.EncodeToString(teeID[:]))
-	err = fccutils.RegisterNode(testSupport, teeInfo, *pf, *epf, ftdcTeeID, *command, *instructionF)
+	err = fccutils.RegisterNode(testSupport, teeInfo, hostURL, *epf, ftdcTeeID, *command, *instructionF)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
