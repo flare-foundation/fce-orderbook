@@ -221,11 +221,8 @@ docker compose up -d --build
 
 Environment variable overrides (set in shell or `.env`):
 ```bash
-# Custom proxy image
-TEE_PROXY_IMAGE=my-registry/tee-proxy:v2 docker compose up -d
-
-# Custom network (if your infra compose uses a different network name)
-COMPOSE_NETWORK=my_network docker compose up -d
+# Use a remote image registry instead of locally-built images
+REGISTRY=registry.gitlab.com/flarenetwork/tee/e2e docker compose up -d
 
 # Verbose logging
 LOG_LEVEL=DEBUG docker compose up -d

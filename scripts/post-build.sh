@@ -106,6 +106,7 @@ go run ./cmd/register-tee \
     -a "$ADDRESSES_FILE" \
     -c "$CHAIN_URL" \
     -p "$EXT_PROXY_URL" \
+    -h "${EXT_PROXY_HOST_URL:-http://localhost:6674}" \
     -ep "$NORMAL_PROXY_URL" \
     $LOCAL_FLAG \
     || die "Register TEE failed"

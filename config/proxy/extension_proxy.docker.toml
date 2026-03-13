@@ -1,11 +1,13 @@
-# Docker-specific proxy config. Service names instead of localhost.
+# Docker-specific proxy config.
+# ext-proxy runs in a separate compose from the infrastructure. It reaches
+# infrastructure services (indexer-db, blockchain node) via host.docker.internal.
 redis_port = "redis:6379"
 private_key_variable = "PRIVATE_KEY"
 initial_signing_policy_offset = 0
 signing_policy_fetch_interval = "20s"
 
 [db]
-host = "indexer-db"
+host = "host.docker.internal"
 port = 3306
 database = "db"
 username = "root"

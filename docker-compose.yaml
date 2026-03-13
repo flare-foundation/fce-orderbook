@@ -18,6 +18,8 @@ services:
       - ./config/proxy/extension_proxy.docker.toml:/app/config/config.toml:ro
     environment:
       - PRIVATE_KEY=${PRIVATE_KEY:-983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${EXT_PROXY_INTERNAL_BIND:-0.0.0.0:6673}:6663"
       - "${EXT_PROXY_EXTERNAL_BIND:-0.0.0.0:6674}:6664"
@@ -50,7 +52,3 @@ services:
       ext-proxy:
         condition: service_healthy
 
-networks:
-  default:
-    name: ${COMPOSE_NETWORK:-docker_default}
-    external: true
