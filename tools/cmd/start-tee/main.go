@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -37,9 +39,7 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
-	if err := godotenv.Load(); err != nil {
-		fmt.Printf("Warning: Error loading .env file: %v\n", err)
-	}
+	loadEnv()
 
 	_ = setOwnerAddress()
 
@@ -51,6 +51,18 @@ func main() {
 
 	sig := <-signalChan
 	logger.Infof("Received %v signal, shutting down", sig)
+}
+
+func loadEnv() {
+	// Try project-root .env first (works even when CWD is tools/).
+	_, thisFile, _, _ := runtime.Caller(0)
+	rootEnv := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", ".env")
+	if err := godotenv.Load(rootEnv); err != nil {
+		// Fallback to CWD .env.
+		if err := godotenv.Load(); err != nil {
+			fmt.Printf("Warning: Error loading .env file: %v\n", err)
+		}
+	}
 }
 
 func runExtension() {

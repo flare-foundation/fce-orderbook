@@ -259,6 +259,55 @@ Or run everything (pre-build + post-build + test) in one shot:
 ./scripts/full-setup.sh --test
 ```
 
+## Local Development (without Docker for Go services)
+
+For faster iteration — e.g. adding print statements, tweaking logic — you can run the proxy and TEE node as Go processes while keeping only Redis in Docker. This avoids rebuilding Docker images on every change.
+
+#### 1. Start Redis only
+
+```bash
+REDIS_BIND=127.0.0.1:6380 docker compose up -d redis
+```
+
+This starts just the Redis container, mapped to port 6380 to match the local proxy config (`config/proxy/extension_proxy.toml`). Redis stays running across Go process restarts — no need to touch it again.
+
+#### 2. Run pre-build (if not already done)
+
+```bash
+./scripts/pre-build.sh
+```
+
+#### 3. Start the Go processes
+
+In separate terminals (from the project root):
+
+```bash
+# Terminal 1: Extension TEE node
+cd tools && go run ./cmd/start-tee -extensionID <your-extension-id>
+
+# Terminal 2: Extension proxy
+cd tools && go run ./cmd/start-proxy
+```
+
+The extension ID is in `config/extension.env` after pre-build.
+
+#### 4. Post-build and test
+
+```bash
+./scripts/post-build.sh
+./scripts/test.sh
+```
+
+#### Iterating
+
+To pick up code changes, just `Ctrl+C` the Go process and re-run it. Redis and the other process can keep running. There's no image rebuild step.
+
+To stop Redis when you're done:
+
+```bash
+docker compose down
+```
+
 ## Further Reading
 
 - [Extension Development Guide](docs/extension-guide.md) — how the code works and how to add your own logic
