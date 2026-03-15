@@ -26,9 +26,7 @@ func main() {
 
 	ctx := context.TODO()
 
-	if err := godotenv.Load(); err != nil {
-		fmt.Printf("Warning: Error loading .env file: %v\n", err)
-	}
+	loadEnv()
 
 	proxyConfigFile := findProxyConfig()
 
@@ -44,11 +42,25 @@ func main() {
 	logger.Infof("Received %v signal, shutting down", sig)
 }
 
+func projectRoot() string {
+	_, thisFile, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
+}
+
+func loadEnv() {
+	// Try project-root .env first (works even when CWD is tools/).
+	rootEnv := filepath.Join(projectRoot(), ".env")
+	if err := godotenv.Load(rootEnv); err != nil {
+		// Fallback to CWD .env.
+		if err := godotenv.Load(); err != nil {
+			fmt.Printf("Warning: Error loading .env file: %v\n", err)
+		}
+	}
+}
+
 func findProxyConfig() string {
 	// Try project-root relative path first.
-	_, thisFile, _, _ := runtime.Caller(0)
-	projectRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
-	candidate := filepath.Join(projectRoot, "config", "proxy", "extension_proxy.toml")
+	candidate := filepath.Join(projectRoot(), "config", "proxy", "extension_proxy.toml")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate
 	}

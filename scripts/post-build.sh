@@ -4,7 +4,7 @@
 # Run this AFTER Docker Compose brings up the extension TEE + proxy + Redis.
 #
 # Inputs (env vars):
-#   EXT_PROXY_URL       — extension proxy URL (default: http://localhost:6674)
+#   EXT_PROXY_URL       — extension proxy URL (auto-detected: :6674 for Docker, :6664 for local)
 #   NORMAL_PROXY_URL    — normal/FTDC proxy URL (default: http://localhost:6662)
 #   CHAIN_URL           — chain RPC URL (default: http://127.0.0.1:8545)
 #   ADDRESSES_FILE      — path to deployed-addresses.json (auto-detected if unset)
@@ -29,7 +29,15 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
     set +a
 fi
 
-EXT_PROXY_URL="${EXT_PROXY_URL:-http://localhost:6674}"
+# Auto-detect proxy port: use Docker port (6674) if ext-proxy container is running,
+# otherwise fall back to local Go process port (6664).
+if [[ -z "${EXT_PROXY_URL:-}" ]]; then
+    if docker compose ps ext-proxy --status running 2>/dev/null | grep -q ext-proxy; then
+        EXT_PROXY_URL="http://localhost:6674"
+    else
+        EXT_PROXY_URL="http://localhost:6664"
+    fi
+fi
 NORMAL_PROXY_URL="${NORMAL_PROXY_URL:-http://localhost:6662}"
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
