@@ -11,6 +11,7 @@ import (
 	"extension-scaffold/pkg/types"
 
 	"github.com/flare-foundation/go-flare-common/pkg/tee/instruction"
+	"github.com/flare-foundation/go-flare-common/pkg/tee/structs"
 	teetypes "github.com/flare-foundation/tee-node/pkg/types"
 	teeutils "github.com/flare-foundation/tee-node/pkg/utils"
 
@@ -23,6 +24,8 @@ type Extension struct {
 
 	greetingCount int
 	lastGreeting  string
+	farewellCount int
+	lastFarewell  string
 }
 
 // --- DO NOT MODIFY: New(), actionHandler() are boilerplate.
@@ -45,6 +48,8 @@ func (e *Extension) stateHandler(w http.ResponseWriter, r *http.Request) {
 		State: types.State{
 			GreetingCount: e.greetingCount,
 			LastGreeting:  e.lastGreeting,
+			FarewellCount: e.farewellCount,
+			LastFarewell:  e.lastFarewell,
 		},
 	}
 	e.mu.RUnlock()
@@ -63,13 +68,29 @@ func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
 	}
 
 	switch {
-	case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):
-		ar := e.processSayHello(action, dataFixed)
+	case dataFixed.OPType == teeutils.ToHash(config.OPTypeGreeting):
+		return e.processGreeting(action, dataFixed)
+
+	default:
+		return http.StatusNotImplemented, []byte("unsupported op type")
+	}
+}
+
+// processGreeting routes GREETING instructions by OPCommand.
+func (e *Extension) processGreeting(action teetypes.Action, df *instruction.DataFixed) (int, []byte) {
+	switch {
+	case df.OPCommand == teeutils.ToHash(config.OPCommandSayHello):
+		ar := e.processSayHello(action, df)
+		b, _ := json.Marshal(ar)
+		return http.StatusOK, b
+
+	case df.OPCommand == teeutils.ToHash(config.OPCommandSayGoodbye):
+		ar := e.processSayGoodbye(action, df)
 		b, _ := json.Marshal(ar)
 		return http.StatusOK, b
 
 	default:
-		return http.StatusNotImplemented, []byte("unsupported op type")
+		return http.StatusNotImplemented, []byte("unsupported op command")
 	}
 }
 
@@ -97,6 +118,34 @@ func (e *Extension) processSayHello(action teetypes.Action, df *instruction.Data
 	resp := types.SayHelloResponse{
 		Greeting:       greeting,
 		GreetingNumber: greetingNumber,
+	}
+	data, _ := json.Marshal(resp)
+
+	return buildResult(action, df, data, 1, nil)
+}
+
+// processSayGoodbye handles SAY_GOODBYE instructions: returns a farewell and tracks count.
+func (e *Extension) processSayGoodbye(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
+	var req types.SayGoodbyeRequest
+	err := structs.DecodeTo(types.SayGoodbyeMessageArg, df.OriginalMessage, &req)
+	if err != nil {
+		return buildResult(action, df, nil, 0, fmt.Errorf("decoding request: %w", err))
+	}
+
+	if req.Name == "" {
+		return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
+	}
+
+	e.mu.Lock()
+	e.farewellCount++
+	farewellNumber := e.farewellCount
+	farewell := fmt.Sprintf("Goodbye, %s! Reason: %s", req.Name, req.Reason)
+	e.lastFarewell = farewell
+	e.mu.Unlock()
+
+	resp := types.SayGoodbyeResponse{
+		Farewell:       farewell,
+		FarewellNumber: farewellNumber,
 	}
 	data, _ := json.Marshal(resp)
 

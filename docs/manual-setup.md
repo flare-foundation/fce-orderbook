@@ -13,7 +13,9 @@ The manual steps are below, using "Orderbook" / "orderbook" as an example — su
 ```solidity
 // Before:
 contract HelloWorldInstructionSender {
-    bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
+    bytes32 constant OP_TYPE_GREETING = bytes32("GREETING");
+    bytes32 constant OP_COMMAND_SAY_HELLO = bytes32("SAY_HELLO");
+    bytes32 constant OP_COMMAND_SAY_GOODBYE = bytes32("SAY_GOODBYE");
 
 // After:
 contract OrderbookInstructionSender {
@@ -66,6 +68,7 @@ import "your-module/tools/pkg/contracts/helloworld"
 // ... helloworld.DeployHelloWorldInstructionSender(...)
 // ... helloworld.NewHelloWorldInstructionSender(...)
 // ... sender.SendSayHello(opts, message)
+// ... sender.SendSayGoodbye(opts, message)
 
 // After:
 import "your-module/tools/pkg/contracts/orderbook"
@@ -74,7 +77,7 @@ import "your-module/tools/pkg/contracts/orderbook"
 // ... sender.SendPlaceOrder(opts, message)
 ```
 
-Note: The `sender.SendSayHello()` call in `SendInstruction()` must also be renamed to match the new Solidity function name (e.g. `sendPlaceOrder` in Solidity becomes `sender.SendPlaceOrder` in the Go bindings).
+Note: The `sender.SendSayHello()` and `sender.SendSayGoodbye()` calls in `SendInstruction()` must also be renamed to match the new Solidity function names (e.g. `sendPlaceOrder` in Solidity becomes `sender.SendPlaceOrder` in the Go bindings).
 
 ## Summary checklist
 
@@ -84,4 +87,4 @@ Note: The `sender.SendSayHello()` call in `SendInstruction()` must also be renam
 | 2 | Update script config | `scripts/generate-bindings.sh` | `CONTRACT_NAME` and `GO_PKG` variables |
 | 3 | Rename Go bindings directory | `tools/pkg/contracts/helloworld/` | Rename to match `GO_PKG` |
 | 4 | Update `go:generate` directive | `tools/pkg/contracts/<yourpkg>/*.go` | `--abi`, `--bin`, `--pkg`, `--type` flags |
-| 5 | Update Go imports | `tools/pkg/utils/instructions.go` | Import path + type names + `SendSayHello` rename |
+| 5 | Update Go imports | `tools/pkg/utils/instructions.go` | Import path + type names + `SendSayHello`/`SendSayGoodbye` renames |

@@ -10,6 +10,7 @@
 # Prerequisites:
 #   - Infrastructure running (Hardhat, indexer, Redis on :6380, normal TEE + proxy)
 #   - config/extension.env exists (created by pre-build.sh), OR EXTENSION_ID is set
+#   - Redis will be started on :6382 automatically (separate from infrastructure Redis)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -36,19 +37,40 @@ PRIVATE_KEY="${PRIVATE_KEY:-0x983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd
 
 log "Extension ID: $EXTENSION_ID"
 
+# --- Build Go binaries (once) so we run the actual binary, not `go run` ---
+BIN_DIR="$PROJECT_DIR/out/bin"
+mkdir -p "$BIN_DIR"
+log "Building Go binaries..."
+cd "$PROJECT_DIR/tools"
+go build -o "$BIN_DIR/start-tee" ./cmd/start-tee
+go build -o "$BIN_DIR/start-proxy" ./cmd/start-proxy
+
 # --- Start extension TEE ---
 log "Starting extension TEE node..."
-cd "$PROJECT_DIR/tools"
 EXTENSION_ID="$EXTENSION_ID" "$E2E" start ext-tee "$PID_DIR/ext-tee.pid" "$LOG_DIR/ext-tee.log" \
-    go run ./cmd/start-tee -extensionID "$EXTENSION_ID"
+    "$BIN_DIR/start-tee" -extensionID "$EXTENSION_ID"
 
 log "Waiting for extension TEE to initialize..."
 sleep 5
 
+# --- Start extension Redis on port 6382 via Docker Compose ---
+log "Starting Redis via Docker Compose..."
+docker compose -f "$PROJECT_DIR/docker-compose.yaml" up -d redis
+log "Waiting for Redis on :6382..."
+retries=0
+while ! docker compose -f "$PROJECT_DIR/docker-compose.yaml" exec -T redis redis-cli ping > /dev/null 2>&1; do
+    retries=$((retries + 1))
+    if [ $retries -ge 15 ]; then
+        die "Redis container failed to become healthy"
+    fi
+    sleep 1
+done
+log "Redis on :6382 ready"
+
 # --- Start extension proxy ---
 log "Starting extension proxy..."
 PRIVATE_KEY="$PRIVATE_KEY" "$E2E" start ext-proxy "$PID_DIR/ext-proxy.pid" "$LOG_DIR/ext-proxy.log" \
-    go run ./cmd/start-proxy
+    "$BIN_DIR/start-proxy"
 
 cd "$PROJECT_DIR"
 
@@ -66,11 +88,13 @@ echo -e "${GREEN} Services started${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${CYAN}Processes${NC}"
+echo "  Extension Redis  Docker container (port 6382)"
 echo "  Extension TEE    PID $EXT_TEE_PID"
 echo "  Extension Proxy  PID $EXT_PROXY_PID"
 echo "  Proxy URL        http://localhost:6664"
 echo ""
 echo -e "${CYAN}Logs${NC}"
+echo "  Redis log        docker compose logs redis"
 echo "  TEE log          $LOG_DIR/ext-tee.log"
 echo "  Proxy log        $LOG_DIR/ext-proxy.log"
 echo ""

@@ -1,4 +1,4 @@
-redis_port = ":6380"
+redis_port = ":6382"
 
 private_key_variable = ""
 initial_signing_policy_offset = 0

@@ -9,14 +9,16 @@ import { ITeeMachineRegistry } from "./interfaces/ITeeMachineRegistry.sol";
 /// @author Flare Foundation
 /// @notice Hello World example — on-chain entry point for sending instructions to the TEE.
 ///
-/// DO NOT MODIFY: constructor, setExtensionId(), _getExtensionId(), OP_COMMAND_PLACEHOLDER
+/// DO NOT MODIFY: constructor, setExtensionId(), _getExtensionId()
 contract HelloWorldInstructionSender {
-    /// @notice Operation type for the SAY_HELLO action.
-    bytes32 public constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
+    /// @notice Operation type for greeting actions (SAY_HELLO, SAY_GOODBYE).
+    bytes32 public constant OP_TYPE_GREETING = bytes32("GREETING");
 
-    // --- DO NOT MODIFY ---
-    /// @notice Placeholder command field passed with every instruction.
-    bytes32 public constant OP_COMMAND_PLACEHOLDER = bytes32("PLACEHOLDER");
+    /// @notice Command for the SAY_HELLO action.
+    bytes32 public constant OP_COMMAND_SAY_HELLO = bytes32("SAY_HELLO");
+
+    /// @notice Command for the SAY_GOODBYE action.
+    bytes32 public constant OP_COMMAND_SAY_GOODBYE = bytes32("SAY_GOODBYE");
 
     /// @notice Reference to the TEE extension registry contract.
     ITeeExtensionRegistry public immutable TEE_EXTENSION_REGISTRY;
@@ -24,6 +26,12 @@ contract HelloWorldInstructionSender {
     ITeeMachineRegistry public immutable TEE_MACHINE_REGISTRY;
 
     uint256 private _extensionId;
+
+    /// @notice Payload for the SAY_GOODBYE instruction.
+    struct SayGoodbyeMessage {
+        string name;
+        string reason;
+    }
 
     /// @notice Initializes the contract with registry addresses.
     /// @param _teeExtensionRegistry Address of the TEE extension registry.
@@ -60,9 +68,27 @@ contract HelloWorldInstructionSender {
 
         TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
             teeIds,
-            OP_TYPE_SAY_HELLO,
-            OP_COMMAND_PLACEHOLDER,
+            OP_TYPE_GREETING,
+            OP_COMMAND_SAY_HELLO,
             _message,
+            cosigners,
+            cosignersThreshold
+        );
+    }
+
+    /// @notice Sends a SAY_GOODBYE instruction to the TEE.
+    /// @param _name The name of the person to say goodbye to.
+    /// @param _reason The reason for saying goodbye.
+    function sendSayGoodbye(string calldata _name, string calldata _reason) external payable {
+        address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
+        address[] memory cosigners = new address[](0);
+        uint64 cosignersThreshold = 0;
+
+        TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
+            teeIds,
+            OP_TYPE_GREETING,
+            OP_COMMAND_SAY_GOODBYE,
+            abi.encode(SayGoodbyeMessage(_name, _reason)),
             cosigners,
             cosignersThreshold
         );

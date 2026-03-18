@@ -67,7 +67,7 @@ func SetExtensionId(s *support.Support, instructionSenderAddress common.Address)
 	return nil
 }
 
-func SendInstruction(s *support.Support, instructionSenderAddress common.Address, message []byte) (common.Hash, common.Hash, error) {
+func SendSayHello(s *support.Support, instructionSenderAddress common.Address, message []byte) (common.Hash, common.Hash, error) {
 	sender, err := helloworld.NewHelloWorldInstructionSender(instructionSenderAddress, s.ChainClient)
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to bind contract: %s", err)
@@ -80,6 +80,44 @@ func SendInstruction(s *support.Support, instructionSenderAddress common.Address
 	opts.Value = big.NewInt(1000000)
 
 	tx, err := sender.SendSayHello(opts, message)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send instruction: %s", err)
+	}
+
+	receipt, err := bind.WaitMined(context.Background(), s.ChainClient, tx)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed waiting for transaction: %s", err)
+	}
+
+	if receipt.Status != 1 {
+		return common.Hash{}, common.Hash{}, errors.Errorf("transaction failed with status: %d", receipt.Status)
+	}
+
+	if len(receipt.Logs) == 0 {
+		return common.Hash{}, common.Hash{}, errors.New("no logs found in receipt")
+	}
+
+	instructionSent, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*receipt.Logs[0])
+	if err != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to parse TeeInstructionsSent event: %s", err)
+	}
+
+	return instructionSent.InstructionId, receipt.TxHash, nil
+}
+
+func SendSayGoodbye(s *support.Support, instructionSenderAddress common.Address, name string, reason string) (common.Hash, common.Hash, error) {
+	sender, err := helloworld.NewHelloWorldInstructionSender(instructionSenderAddress, s.ChainClient)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to bind contract: %s", err)
+	}
+
+	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to create transactor: %s", err)
+	}
+	opts.Value = big.NewInt(1000000)
+
+	tx, err := sender.SendSayGoodbye(opts, name, reason)
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send instruction: %s", err)
 	}

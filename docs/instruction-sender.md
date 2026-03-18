@@ -35,7 +35,7 @@ Any InstructionSender contract must:
 2. **Call `sendInstructions` on `TeeExtensionRegistry`** — this is the only way to submit instructions. The call must include:
    - `teeIds` — at least one TEE machine address (use `teeMachineRegistry.getRandomTeeIds()` to pick one)
    - `opType` — a `bytes32` identifying the action (must match your Go handler)
-   - `opCommand` — currently always `bytes32("PLACEHOLDER")`
+   - `opCommand` — a `bytes32` identifying the specific command within the operation type (e.g., `bytes32("SAY_HELLO")` or `bytes32("SAY_GOODBYE")`)
    - `message` — the payload (typically JSON-encoded, non-empty)
    - `cosigners` / `cosignersThreshold` — for multi-sig scenarios (usually empty/0)
 
@@ -49,9 +49,11 @@ There are no other constraints. The registry doesn't inspect your contract's cod
 
 The provided `InstructionSender.sol` is a ready-to-use starting point. It handles all the boilerplate — registry references, extension ID discovery, TEE machine selection — and gives you a single place to define your actions:
 
-**Define your operation types** as `bytes32` constants:
+**Define your operation types and commands** as `bytes32` constants:
 ```solidity
-bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
+bytes32 constant OP_TYPE_GREETING = bytes32("GREETING");
+bytes32 constant OP_COMMAND_SAY_HELLO = bytes32("SAY_HELLO");
+bytes32 constant OP_COMMAND_SAY_GOODBYE = bytes32("SAY_GOODBYE");
 ```
 
 **Add a send function per action:**
@@ -63,16 +65,31 @@ function sendSayHello(bytes calldata _message) external payable {
 
     TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
         teeIds,
-        OP_TYPE_SAY_HELLO,
-        OP_COMMAND_PLACEHOLDER,
+        OP_TYPE_GREETING,
+        OP_COMMAND_SAY_HELLO,
         _message,
+        cosigners,
+        cosignersThreshold
+    );
+}
+
+function sendSayGoodbye(string calldata _name, string calldata _reason) external payable {
+    address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
+    address[] memory cosigners = new address[](0);
+    uint64 cosignersThreshold = 0;
+
+    TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
+        teeIds,
+        OP_TYPE_GREETING,
+        OP_COMMAND_SAY_GOODBYE,
+        abi.encode(SayGoodbyeMessage(_name, _reason)),
         cosigners,
         cosignersThreshold
     );
 }
 ```
 
-Each `OP_TYPE` string must match what your Go extension expects. On the Go side, use `teeutils.ToHash("SAY_HELLO")` to produce the matching `bytes32`.
+Each `OP_TYPE` string must match what your Go extension expects. On the Go side, use `teeutils.ToHash("GREETING")` to produce the matching `bytes32`. The `opCommand` field lets you route multiple actions under the same operation type — your Go handler can switch on both values to dispatch to the right logic.
 
 After modifying the contract, run `./scripts/generate-bindings.sh` to regenerate the Go bindings.
 
@@ -100,11 +117,11 @@ contract MinimalInstructionSender {
         extensionId = extId;
     }
 
-    function send(bytes32 opType, bytes calldata message) external payable {
+    function send(bytes32 opType, bytes32 opCommand, bytes calldata message) external payable {
         address[] memory tees = machines.getRandomTeeIds(extensionId, 1);
         address[] memory cosigners = new address[](0);
         registry.sendInstructions{value: msg.value}(
-            tees, opType, bytes32("PLACEHOLDER"), message, cosigners, 0
+            tees, opType, opCommand, message, cosigners, 0
         );
     }
 }

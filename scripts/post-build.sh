@@ -32,7 +32,7 @@ fi
 # Auto-detect proxy port: use Docker port (6674) if ext-proxy container is running,
 # otherwise fall back to local Go process port (6664).
 if [[ -z "${EXT_PROXY_URL:-}" ]]; then
-    if docker compose ps ext-proxy --status running 2>/dev/null | grep -q ext-proxy; then
+    if docker compose -f "$PROJECT_DIR/docker-compose.yaml" ps ext-proxy --status running 2>/dev/null | grep -q ext-proxy; then
         EXT_PROXY_URL="http://localhost:6674"
     else
         EXT_PROXY_URL="http://localhost:6664"
@@ -114,7 +114,7 @@ go run ./cmd/register-tee \
     -a "$ADDRESSES_FILE" \
     -c "$CHAIN_URL" \
     -p "$EXT_PROXY_URL" \
-    -h "${EXT_PROXY_HOST_URL:-http://localhost:6674}" \
+    -h "${EXT_PROXY_HOST_URL:-$EXT_PROXY_URL}" \
     -ep "$NORMAL_PROXY_URL" \
     $LOCAL_FLAG \
     || die "Register TEE failed"
