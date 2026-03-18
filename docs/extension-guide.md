@@ -51,18 +51,22 @@ Your extension controls steps 1 (the contract) and 6 (the action handler). Every
 
 This file defines the string constants for your operation types. Each constant is hashed to `bytes32` at runtime using `teeutils.ToHash()` and compared against the `OPType` field in incoming actions.
 
-**What to do:** Add one constant per operation your extension supports. The scaffold defines one:
+**What to do:** Add one `OPType` constant per logical operation group your extension supports, and one `OPCommand` constant per individual command within that group. The scaffold defines:
 
 ```go
 const (
-    OPTypeSayHello = "SAY_HELLO"
+    OPTypeGreeting     = "GREETING"
+    OPCommandSayHello  = "SAY_HELLO"
+    OPCommandSayGoodbye = "SAY_GOODBYE"
 )
 ```
 
 These strings must exactly match the `bytes32` constants in your Solidity contract:
 
 ```solidity
-bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");
+bytes32 constant OP_TYPE_GREETING      = bytes32("GREETING");
+bytes32 constant OP_COMMAND_SAY_HELLO  = bytes32("SAY_HELLO");
+bytes32 constant OP_COMMAND_SAY_GOODBYE = bytes32("SAY_GOODBYE");
 ```
 
 ### 2. `pkg/types/types.go` — Request and Response Types
@@ -78,21 +82,34 @@ This file defines the JSON structures for your extension's inputs and outputs.
 The scaffold defines:
 
 ```go
-// What the user sends (via the Solidity contract)
+// What the user sends for a SAY_HELLO command
 type SayHelloRequest struct {
     Name string `json:"name"`
 }
 
-// What your extension returns
+// What your extension returns for SAY_HELLO
 type SayHelloResponse struct {
     Greeting       string `json:"greeting"`
     GreetingNumber int    `json:"greetingNumber"`
+}
+
+// What the user sends for a SAY_GOODBYE command
+type SayGoodbyeRequest struct {
+    Name string `json:"name"`
+}
+
+// What your extension returns for SAY_GOODBYE
+type SayGoodbyeResponse struct {
+    Farewell      string `json:"farewell"`
+    FarewellCount int    `json:"farewellCount"`
 }
 
 // Your extension's cumulative state
 type State struct {
     GreetingCount int    `json:"greetingCount"`
     LastGreeting  string `json:"lastGreeting"`
+    FarewellCount int    `json:"farewellCount"`
+    LastFarewell  string `json:"lastFarewell"`
 }
 ```
 
@@ -115,12 +132,14 @@ type Extension struct {
 
     greetingCount int
     lastGreeting  string
+    farewellCount int
+    lastFarewell  string
 }
 ```
 
 #### processAction() — The Router
 
-This function receives every action and routes it. Add a `case` for each operation type:
+This function receives every action and routes it. Add a `case` for each operation type. Within a type, a sub-router (e.g. `processGreeting`) dispatches on `OPCommand`:
 
 ```go
 func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
@@ -130,8 +149,8 @@ func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
     }
 
     switch {
-    case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):
-        ar := e.processSayHello(action, dataFixed)
+    case dataFixed.OPType == teeutils.ToHash(config.OPTypeGreeting):
+        ar := e.processGreeting(action, dataFixed)
         b, _ := json.Marshal(ar)
         return http.StatusOK, b
 
@@ -139,11 +158,22 @@ func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
         return http.StatusNotImplemented, []byte("unsupported op type")
     }
 }
+
+func (e *Extension) processGreeting(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
+    switch {
+    case df.OPCommand == teeutils.ToHash(config.OPCommandSayHello):
+        return e.processSayHello(action, df)
+    case df.OPCommand == teeutils.ToHash(config.OPCommandSayGoodbye):
+        return e.processSayGoodbye(action, df)
+    default:
+        return buildResult(action, df, nil, 0, fmt.Errorf("unsupported op command"))
+    }
+}
 ```
 
 #### Handler Functions
 
-Each handler follows the same 4-step pattern. Here's the scaffold's `processSayHello`:
+Each handler follows the same 4-step pattern. Here's the scaffold's `processSayHello` (a command under the `GREETING` operation type):
 
 ```go
 func (e *Extension) processSayHello(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
@@ -180,6 +210,40 @@ func (e *Extension) processSayHello(action teetypes.Action, df *instruction.Data
 }
 ```
 
+The `processSayGoodbye` handler follows the same 4-step pattern. It decodes its request using ABI decoding via `structs.DecodeTo` rather than plain JSON:
+
+```go
+func (e *Extension) processSayGoodbye(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
+    // 1. Decode the incoming message (ABI-encoded)
+    var req types.SayGoodbyeRequest
+    if err := structs.DecodeTo(types.SayGoodbyeMessageArg, df.OriginalMessage, &req); err != nil {
+        return buildResult(action, df, nil, 0, fmt.Errorf("decoding request: %w", err))
+    }
+
+    // 2. Validate
+    if req.Name == "" {
+        return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
+    }
+
+    // 3. Execute business logic
+    e.mu.Lock()
+    e.farewellCount++
+    farewellNumber := e.farewellCount
+    farewell := fmt.Sprintf("Goodbye, %s! See you next time.", req.Name)
+    e.lastFarewell = farewell
+    e.mu.Unlock()
+
+    // 4. Build response
+    resp := types.SayGoodbyeResponse{
+        Farewell:      farewell,
+        FarewellCount: farewellNumber,
+    }
+    data, _ := json.Marshal(resp)
+
+    return buildResult(action, df, data, 1, nil)
+}
+```
+
 **`buildResult` parameters:**
 - `status = 0` → error. The `err` parameter is logged.
 - `status = 1` → success. The `data` parameter is returned to the caller.
@@ -198,22 +262,22 @@ See the **[Testing Guide](testing.md)** for details on writing and running tests
 
 ## How the Pieces Connect
 
-The critical link between your Solidity contract and Go code is the **OPType string**. It must be identical in three places:
+The critical link between your Solidity contract and Go code is the **OPType + OPCommand pair**. Both must be identical in three places each:
 
-| Location | Example |
-|----------|---------|
-| Solidity contract | `bytes32 constant OP_TYPE_SAY_HELLO = bytes32("SAY_HELLO");` |
-| Go config | `OPTypeSayHello = "SAY_HELLO"` |
-| Go router | `case dataFixed.OPType == teeutils.ToHash(config.OPTypeSayHello):` |
+| What | Solidity | Go config | Go router |
+|------|----------|-----------|-----------|
+| Operation type | `OP_TYPE_GREETING = bytes32("GREETING")` | `OPTypeGreeting = "GREETING"` | `dataFixed.OPType == teeutils.ToHash(config.OPTypeGreeting)` |
+| Hello command | `OP_COMMAND_SAY_HELLO = bytes32("SAY_HELLO")` | `OPCommandSayHello = "SAY_HELLO"` | `df.OPCommand == teeutils.ToHash(config.OPCommandSayHello)` |
+| Goodbye command | `OP_COMMAND_SAY_GOODBYE = bytes32("SAY_GOODBYE")` | `OPCommandSayGoodbye = "SAY_GOODBYE"` | `df.OPCommand == teeutils.ToHash(config.OPCommandSayGoodbye)` |
 
-If these don't match, the action will fall through to the `default` case and return "unsupported op type".
+If the OPType doesn't match, the action falls through to `default` in `processAction` and returns "unsupported op type". If the OPCommand doesn't match, the action falls through to `default` in the sub-router (e.g. `processGreeting`) and returns "unsupported op command".
 
 ## Data Flow Through the Extension
 
 ```
 Solidity contract
     │
-    │  _message (raw bytes, typically JSON)
+    │  _message (raw bytes, JSON or ABI-encoded)
     ▼
 TeeExtensionRegistry.sendInstructions()
     │
@@ -227,12 +291,22 @@ processAction()
     │
     │  parses DataFixed from action.Data.Message
     │  routes based on dataFixed.OPType
-    ▼
-processSayHello()
     │
-    │  decodes SayHelloRequest from df.OriginalMessage
-    │  executes greeting logic, increments counter
-    │  returns ActionResult with SayHelloResponse in Data field
+    ├─ OPType == GREETING ──▶ processGreeting()
+    │                              │
+    │                              │  routes based on df.OPCommand
+    │                              │
+    │                              ├─ OPCommand == SAY_HELLO ──▶ processSayHello()
+    │                              │      decodes SayHelloRequest (JSON)
+    │                              │      increments greetingCount
+    │                              │      returns SayHelloResponse
+    │                              │
+    │                              └─ OPCommand == SAY_GOODBYE ─▶ processSayGoodbye()
+    │                                     decodes SayGoodbyeRequest (ABI via structs.DecodeTo)
+    │                                     increments farewellCount
+    │                                     returns SayGoodbyeResponse
+    │
+    └─ default ──▶ "unsupported op type"
     ▼
 buildResult() → JSON response → TEE node → proxy → caller
 ```
@@ -255,14 +329,16 @@ The sign port is available at `localhost:{SIGN_PORT}` from within the extension.
 
 ## Step-by-Step: Adding a New Operation
 
-1. **Add the OPType constant** in `internal/config/config.go`
-2. **Define request/response types** in `pkg/types/types.go`
-3. **Add a case** in `processAction()` in `internal/extension/extension.go`
-4. **Write the handler function** following the 4-step pattern
-5. **Add the Solidity constant and send function** in `contracts/InstructionSender.sol`
-6. **Regenerate bindings**: `./scripts/generate-bindings.sh`
-7. **Update the Go tooling** — in `tools/pkg/utils/instructions.go`, update the import path from `helloworld` to your package, rename type references (e.g. `helloworld.DeployHelloWorldInstructionSender` → `orderbook.DeployOrderbookInstructionSender`, `helloworld.NewHelloWorldInstructionSender` → `orderbook.NewOrderbookInstructionSender`), and rename the send function call (e.g. `sender.SendSayHello` → `sender.SendPlaceOrder`) to match your new Solidity function name
-8. **Add a test case** in `tools/cmd/run-test/main.go`
+1. **Add constants** in `internal/config/config.go` — one `OPType` constant for the operation group and one `OPCommand` constant per individual command
+2. **Define request/response types** in `pkg/types/types.go` — one request/response pair per command, plus any new fields in `State`
+3. **Add a case** in `processAction()` in `internal/extension/extension.go` — route on `OPType` to a sub-router function (e.g. `processGreeting`)
+4. **Write the sub-router** — switch on `OPCommand` and dispatch to individual handler functions
+5. **Write each handler function** following the 4-step pattern (decode → validate → execute → build response). Use `structs.DecodeTo` for ABI-encoded messages or `json.Decoder` for JSON messages
+6. **Add any new state fields** to the `Extension` struct and expose them in `stateHandler()` via `types.State`
+7. **Add the Solidity constants and send function** in `contracts/InstructionSender.sol`
+8. **Regenerate bindings**: `./scripts/generate-bindings.sh`
+9. **Update the Go tooling** — in `tools/pkg/utils/instructions.go`, update the import path from `helloworld` to your package, rename type references (e.g. `helloworld.DeployHelloWorldInstructionSender` → `orderbook.DeployOrderbookInstructionSender`, `helloworld.NewHelloWorldInstructionSender` → `orderbook.NewOrderbookInstructionSender`), and rename the send function call (e.g. `sender.SendSayHello` → `sender.SendPlaceOrder`) to match your new Solidity function name
+10. **Add a test case** in `tools/cmd/run-test/main.go`
 
 ## Common Patterns
 

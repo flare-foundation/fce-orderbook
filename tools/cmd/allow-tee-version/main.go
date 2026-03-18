@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"flag"
 	"os"
+	"strings"
 	"extension-scaffold/tools/pkg/configs"
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/support"
@@ -50,6 +51,10 @@ func main() {
 	logger.Infof("registering version: %s, %s, extension: %v tee id: %s", teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, teeInfo.MachineData.ExtensionID.Big(), teeID)
 	err = fccutils.AddTeeVersion(testSupport, privKey, teeInfo.MachineData.ExtensionID.Big(), teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, common.Hash{}, *versionF)
 	if err != nil {
-		fccutils.FatalWithCause(err)
+		if strings.Contains(err.Error(), "VersionAlreadyExists") {
+			logger.Infof("version already registered, skipping")
+		} else {
+			fccutils.FatalWithCause(err)
+		}
 	}
 }

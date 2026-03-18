@@ -53,3 +53,4 @@ require (
 )
 
 replace github.com/flare-foundation/tee-node => ../../tee-node
+

@@ -20,6 +20,11 @@ type SayHelloResponse struct {
 	GreetingNumber int    `json:"greetingNumber"`
 }
 
+type SayGoodbyeResponse struct {
+	Farewell       string `json:"farewell"`
+	FarewellNumber int    `json:"farewellNumber"`
+}
+
 func main() {
 	af := flag.String("a", configs.AddressesFile, "file with deployed addresses")
 	cf := flag.String("c", configs.ChainNodeURL, "chain node url")
@@ -51,7 +56,7 @@ func main() {
 		fccutils.FatalWithCause(err)
 	}
 
-	instructionId, _, err := instrutils.SendInstruction(testSupport, instructionSenderAddress, payload)
+	instructionId, _, err := instrutils.SendSayHello(testSupport, instructionSenderAddress, payload)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
@@ -59,16 +64,33 @@ func main() {
 
 	time.Sleep(5 * time.Second)
 
-	err = verifyResult(*pf, instructionId)
+	err = verifyHelloResult(*pf, instructionId)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
 	logger.Infof("Test passed: SAY_HELLO instruction processed successfully")
 
+	// --- Test case 2: Send a SAY_GOODBYE instruction ---
+	logger.Infof("Sending SAY_GOODBYE instruction...")
+
+	goodbyeInstructionId, _, err := instrutils.SendSayGoodbye(testSupport, instructionSenderAddress, "World", "heading out")
+	if err != nil {
+		fccutils.FatalWithCause(err)
+	}
+	logger.Infof("Instruction sent. ID: %s", goodbyeInstructionId.Hex())
+
+	time.Sleep(5 * time.Second)
+
+	err = verifyGoodbyeResult(*pf, goodbyeInstructionId)
+	if err != nil {
+		fccutils.FatalWithCause(err)
+	}
+	logger.Infof("Test passed: SAY_GOODBYE instruction processed successfully")
+
 	logger.Infof("All tests passed.")
 }
 
-func verifyResult(proxyURL string, instructionId common.Hash) error {
+func verifyHelloResult(proxyURL string, instructionId common.Hash) error {
 	// --- Generic: poll proxy for result (do not modify) ---
 	actionResponse, err := fccutils.ActionResult(proxyURL, instructionId)
 	if err != nil {
@@ -98,6 +120,42 @@ func verifyResult(proxyURL string, instructionId common.Hash) error {
 	}
 	if resp.GreetingNumber < 1 {
 		return errors.Errorf("expected GreetingNumber >= 1, got %d", resp.GreetingNumber)
+	}
+
+	logger.Infof("Response data: %+v", resp)
+
+	return nil
+}
+
+func verifyGoodbyeResult(proxyURL string, instructionId common.Hash) error {
+	actionResponse, err := fccutils.ActionResult(proxyURL, instructionId)
+	if err != nil {
+		return err
+	}
+	actionResult := actionResponse.Result
+
+	if actionResult.Status == 0 {
+		return errors.Errorf("instruction processing failed: %s", actionResult.Log)
+	}
+	if actionResult.Status == 2 {
+		return errors.New("instruction still pending after polling, expected completed")
+	}
+
+	if len(actionResult.Data) == 0 {
+		return errors.New("expected response data but got none")
+	}
+
+	var resp SayGoodbyeResponse
+	err = json.Unmarshal(actionResult.Data, &resp)
+	if err != nil {
+		return errors.Errorf("failed to unmarshal response: %s", err)
+	}
+
+	if resp.Farewell == "" {
+		return errors.New("expected non-empty Farewell")
+	}
+	if resp.FarewellNumber < 1 {
+		return errors.Errorf("expected FarewellNumber >= 1, got %d", resp.FarewellNumber)
 	}
 
 	logger.Infof("Response data: %+v", resp)

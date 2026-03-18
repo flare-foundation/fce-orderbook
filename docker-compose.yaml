@@ -52,3 +52,22 @@ services:
       ext-proxy:
         condition: service_healthy
 
+  types-server:
+    build:
+      context: ../..
+      dockerfile: extension-examples/extension-scaffold/Dockerfile
+    command: ["./types-server"]
+    environment:
+      - TYPES_SERVER_PORT=8100
+    ports:
+      - "${TYPES_SERVER_BIND:-0.0.0.0:8100}:8100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8100/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+networks:
+  default:
+    name: ${COMPOSE_NETWORK:-docker_default}
+    external: true
