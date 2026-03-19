@@ -5,13 +5,18 @@ pragma solidity >=0.7.6 <0.9;
 // is published as a package:
 //   import { ITeeExtensionRegistry } from "flare-smart-contracts-v2/contracts/userInterfaces/tee/ITeeExtensionRegistry.sol";
 interface ITeeExtensionRegistry {
+    struct TeeInstructionParams {
+        bytes32 opType;
+        bytes32 opCommand;
+        bytes message;
+        address[] cosigners;
+        uint64 cosignersThreshold;
+        address claimBackAddress;
+    }
+
     function sendInstructions(
-        address[] memory _teeIds,
-        bytes32 _opType,
-        bytes32 _opCommand,
-        bytes memory _message,
-        address[] memory _cosigners,
-        uint64 _cosignersThreshold
+        address[] calldata _teeIds,
+        TeeInstructionParams calldata _instructionParams
     ) external payable returns (bytes32 _instructionId);
 
     function extensionsCounter() external view returns (uint256);

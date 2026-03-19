@@ -64,15 +64,20 @@ contract HelloWorldInstructionSender {
     function sendSayHello(bytes calldata _message) external payable {
         address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
         address[] memory cosigners = new address[](0);
-        uint64 cosignersThreshold = 0;
+
+        ITeeExtensionRegistry.TeeInstructionParams memory params = ITeeExtensionRegistry.TeeInstructionParams({
+            opType: OP_TYPE_GREETING,
+            opCommand: OP_COMMAND_SAY_HELLO,
+            message: _message,
+            cosigners: cosigners,
+            cosignersThreshold: 0,
+            claimBackAddress: msg.sender
+        });
+
 
         TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
             teeIds,
-            OP_TYPE_GREETING,
-            OP_COMMAND_SAY_HELLO,
-            _message,
-            cosigners,
-            cosignersThreshold
+            params
         );
     }
 
