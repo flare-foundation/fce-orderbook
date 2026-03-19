@@ -8,6 +8,8 @@ import (
 	"extension-scaffold/tools/pkg/configs"
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/support"
+	"flag"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"

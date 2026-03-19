@@ -47,20 +47,35 @@ WAIT_TIMEOUT="${WAIT_TIMEOUT:-120}"
 
 # --- Auto-detect addresses file ---
 if [[ -z "$ADDRESSES_FILE" ]]; then
-    for candidate in \
-        "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../../docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../../../docker/sim_dump/deployed-addresses.json"; do
+    if [[ "$LOCAL_MODE" != "true" ]]; then
+        # Non-local mode: use coston2 deployed addresses
+        candidate="$PROJECT_DIR/config/coston2/deployed-addresses.json"
         if [[ -f "$candidate" ]]; then
             ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
-            break
         fi
-    done
+    fi
+
+    # Fall back to sim_dump candidates (local devnet)
+    if [[ -z "$ADDRESSES_FILE" ]]; then
+        for candidate in \
+            "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../../docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../../../docker/sim_dump/deployed-addresses.json"; do
+            if [[ -f "$candidate" ]]; then
+                ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+                break
+            fi
+        done
+    fi
+
     [[ -n "$ADDRESSES_FILE" ]] || die "Cannot find deployed-addresses.json. Set ADDRESSES_FILE."
 fi
 
 [[ -f "$ADDRESSES_FILE" ]] || die "Addresses file not found: $ADDRESSES_FILE"
+
+# Resolve to absolute path so it works after cd into tools/
+ADDRESSES_FILE="$(cd "$(dirname "$ADDRESSES_FILE")" && pwd)/$(basename "$ADDRESSES_FILE")"
 
 log "Extension proxy: $EXT_PROXY_URL"
 log "Normal proxy:    $NORMAL_PROXY_URL"

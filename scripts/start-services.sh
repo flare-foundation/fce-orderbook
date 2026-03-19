@@ -23,6 +23,13 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[start-services]${NC} $*"; }
 die()  { echo -e "${RED}[start-services] ERROR:${NC} $*" >&2; exit 1; }
 
+# --- Load .env from project root (if present) ---
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
 # --- Load extension config ---
 CONFIG_FILE="$PROJECT_DIR/config/extension.env"
 if [[ -f "$CONFIG_FILE" ]]; then

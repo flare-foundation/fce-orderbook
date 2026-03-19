@@ -59,6 +59,11 @@ func loadEnv() {
 }
 
 func findProxyConfig() string {
+	// Allow override via PROXY_CONFIG env var.
+	if envConfig := os.Getenv("PROXY_CONFIG"); envConfig != "" {
+		return envConfig
+	}
+
 	// Try project-root relative path first.
 	candidate := filepath.Join(projectRoot(), "config", "proxy", "extension_proxy.toml")
 	if _, err := os.Stat(candidate); err == nil {
