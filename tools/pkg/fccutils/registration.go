@@ -179,7 +179,7 @@ func RequestFTDCAvailabilityCheck(s *support.Support, teeID, externalTeeID commo
 	if len(receipt.Logs) < 2 || len(receipt.Logs[1].Topics) < 3 {
 		return common.Hash{}, errors.Errorf("unexpected logs, this should not happen, number of logs %d, number of topics %d", len(receipt.Logs), len(receipt.Logs[1].Topics))
 	}
-	instructionID := receipt.Logs[1].Topics[2]
+	instructionID := receipt.Logs[1].Topics[1]
 
 	logger.Infof("availability check sent, instructionId: %s", hex.EncodeToString(instructionID[:]))
 

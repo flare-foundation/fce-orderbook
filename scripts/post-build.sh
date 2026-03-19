@@ -111,11 +111,6 @@ wait_for_url "$NORMAL_PROXY_URL/info" "Normal proxy"
 step 1 "Allow TEE version"
 cd "$PROJECT_DIR/tools"
 
-LOCAL_FLAG=""
-if [[ "$LOCAL_MODE" == "true" ]]; then
-    LOCAL_FLAG="-l"
-fi
-
 go run ./cmd/allow-tee-version \
     -a "$ADDRESSES_FILE" \
     -c "$CHAIN_URL" \
@@ -131,7 +126,7 @@ go run ./cmd/register-tee \
     -p "$EXT_PROXY_URL" \
     -h "${EXT_PROXY_HOST_URL:-$EXT_PROXY_URL}" \
     -ep "$NORMAL_PROXY_URL" \
-    $LOCAL_FLAG \
+    -l \
     || die "Register TEE failed"
 
 echo ""
