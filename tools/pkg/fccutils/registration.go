@@ -118,11 +118,17 @@ func PreRegistration(
 	if len(receipt.Logs) < 2 {
 		return common.Hash{}, common.Hash{}, errors.New("unexpected logs, this should not happen")
 	}
-	logWithChallenge := receipt.Logs[1]
-	var challenge [32]byte
-	copy(challenge[:], logWithChallenge.Data)
+	attestEvent, err := s.TeeVerification.ParseTeeAttestationRequested(*receipt.Logs[1])
+	if err != nil {
+		return [32]byte{}, common.Hash{}, errors.Errorf("failed to parse TeeAttestationRequested event: %s", err)
+	}
+	challenge := attestEvent.Challenge
 
-	instructionID := receipt.Logs[0].Topics[2]
+	event, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*receipt.Logs[0])
+	if err != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to parse TeeInstructionsSent event: %s", err)
+	}
+	instructionID := common.Hash(event.InstructionId)
 	logger.Infof("tee-attestation requested, instructionId: %s", hex.EncodeToString(instructionID[:]))
 
 	return challenge, instructionID, nil
@@ -149,11 +155,11 @@ func RequestTeeAttestation(s *support.Support, teeID common.Address) (common.Has
 	if len(receipt.Logs) < 2 {
 		return common.Hash{}, errors.New("unexpected logs, this should not happen")
 	}
-	logWithChallenge := receipt.Logs[1]
-	var challenge [32]byte
-	copy(challenge[:], logWithChallenge.Data)
-
-	instructionID := receipt.Logs[0].Topics[2]
+	event, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*receipt.Logs[0])
+	if err != nil {
+		return common.Hash{}, errors.Errorf("failed to parse TeeInstructionsSent event: %s", err)
+	}
+	instructionID := common.Hash(event.InstructionId)
 	logger.Infof("tee attestation requested, instructionId: %s", hex.EncodeToString(instructionID[:]))
 
 	return instructionID, nil
@@ -176,10 +182,14 @@ func RequestFTDCAvailabilityCheck(s *support.Support, teeID, externalTeeID commo
 	if err != nil {
 		return common.Hash{}, errors.Errorf("%s", err)
 	}
-	if len(receipt.Logs) < 2 || len(receipt.Logs[1].Topics) < 3 {
-		return common.Hash{}, errors.Errorf("unexpected logs, this should not happen, number of logs %d, number of topics %d", len(receipt.Logs), len(receipt.Logs[1].Topics))
+	if len(receipt.Logs) == 0 {
+		return common.Hash{}, errors.New("no logs found in receipt")
 	}
-	instructionID := receipt.Logs[1].Topics[2]
+	event, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*receipt.Logs[0])
+	if err != nil {
+		return common.Hash{}, errors.Errorf("failed to parse TeeInstructionsSent event: %s", err)
+	}
+	instructionID := common.Hash(event.InstructionId)
 
 	logger.Infof("availability check sent, instructionId: %s", hex.EncodeToString(instructionID[:]))
 
