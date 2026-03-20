@@ -41,6 +41,10 @@ fi
 NORMAL_PROXY_URL="${NORMAL_PROXY_URL:-http://localhost:6662}"
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
+# Resolve relative paths against PROJECT_DIR (not caller's cwd)
+if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
+fi
 TEE_VERSION="${TEE_VERSION:-v0.1.0}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-120}"

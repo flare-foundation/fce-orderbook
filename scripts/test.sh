@@ -44,6 +44,10 @@ if [[ -z "${EXT_PROXY_URL:-}" ]]; then
 fi
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
+# Resolve relative paths against PROJECT_DIR (not caller's cwd)
+if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
+fi
 INSTRUCTION_SENDER="${INSTRUCTION_SENDER:-}"
 
 [[ -n "$INSTRUCTION_SENDER" ]] || die "INSTRUCTION_SENDER not set. Run pre-build.sh first or set it manually."

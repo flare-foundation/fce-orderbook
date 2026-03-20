@@ -26,6 +26,10 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
 fi
 
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
+# Resolve relative paths against PROJECT_DIR (not caller's cwd)
+if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
+fi
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 CONFIG_OUTPUT="$PROJECT_DIR/config/extension.env"
 
