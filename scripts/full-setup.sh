@@ -2,11 +2,13 @@
 # full-setup.sh — Run the complete extension lifecycle: pre-build → start → post-build → test.
 #
 # Usage:
-#   ./scripts/full-setup.sh          # setup only (steps 1-6)
-#   ./scripts/full-setup.sh --test   # setup + run e2e test (steps 1-7)
+#   ./scripts/full-setup.sh                  # setup only (steps 1-3), docker compose
+#   ./scripts/full-setup.sh --test           # setup + run e2e test (steps 1-4)
+#   ./scripts/full-setup.sh --local          # start services as Go processes instead of docker
+#   ./scripts/full-setup.sh --local --test   # both
 #
 # Prerequisites:
-#   - Infrastructure running (Hardhat, indexer, Redis on :6380, normal TEE + proxy)
+#   - Infrastructure running (Hardhat, indexer, Redis, normal TEE + proxy)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,9 +18,11 @@ log()  { echo -e "${GREEN}[full-setup]${NC} $*"; }
 die()  { echo -e "${RED}[full-setup] ERROR:${NC} $*" >&2; exit 1; }
 
 RUN_TESTS=false
+USE_LOCAL=false
 for arg in "$@"; do
     case "$arg" in
         --test) RUN_TESTS=true ;;
+        --local) USE_LOCAL=true ;;
         *) die "Unknown argument: $arg" ;;
     esac
 done
@@ -30,12 +34,14 @@ echo -e "${CYAN}╚════════════════════�
 "$SCRIPT_DIR/pre-build.sh" || die "Pre-build failed"
 
 # --- Phase 2: Start services (TEE node + proxy) ---
-# TEMPORARY: Uses go run via background processes.
-# Will be replaced by `docker compose up` once the Dockerfile is added.
 echo -e "\n${CYAN}╔══════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║  Phase 2: Start services             ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
-"$SCRIPT_DIR/start-services.sh" || die "Failed to start services"
+if [[ "$USE_LOCAL" == "true" ]]; then
+    "$SCRIPT_DIR/start-services.sh" --local || die "Failed to start services"
+else
+    "$SCRIPT_DIR/start-services.sh" || die "Failed to start services"
+fi
 
 # --- Phase 3: Post-build (register TEE version + machine) ---
 echo -e "\n${CYAN}╔══════════════════════════════════════╗${NC}"
@@ -59,4 +65,8 @@ if [[ "$RUN_TESTS" == "true" ]]; then
 fi
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "${CYAN}Stop services:${NC}  ./scripts/stop-services.sh"
+if [[ "$USE_LOCAL" == "true" ]]; then
+    echo -e "${CYAN}Stop services:${NC}  ./scripts/stop-services.sh --local"
+else
+    echo -e "${CYAN}Stop services:${NC}  ./scripts/stop-services.sh"
+fi

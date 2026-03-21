@@ -1,27 +1,38 @@
 #!/usr/bin/env bash
 #
-# TEMPORARY: Start extension TEE node and proxy as background Go processes.
-# This script will be replaced by `docker compose up` once the Dockerfile is added.
+# Start extension TEE node and proxy.
+#
+# By default, starts services via Docker Compose:
+#   - LOCAL_MODE=true  (default) → uses docker-compose.yaml only (local devnet)
+#   - LOCAL_MODE=false            → also attaches docker-compose.coston2.yaml
+#
+# Pass --local to start services as background Go processes instead of Docker.
 #
 # Usage:
-#   ./scripts/start-services.sh              # uses EXTENSION_ID from config/extension.env
-#   EXTENSION_ID=0x... ./scripts/start-services.sh
+#   ./scripts/start-services.sh              # docker compose (default)
+#   ./scripts/start-services.sh --local      # background Go processes
 #
 # Prerequisites:
-#   - Infrastructure running (Hardhat, indexer, Redis on :6380, normal TEE + proxy)
+#   - Infrastructure running (Hardhat, indexer, Redis, normal TEE + proxy)
 #   - config/extension.env exists (created by pre-build.sh), OR EXTENSION_ID is set
 #   - Redis will be started on :6382 automatically (separate from infrastructure Redis)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-E2E="$SCRIPT_DIR/e2e.sh"
-PID_DIR="$PROJECT_DIR/out/pids"
-LOG_DIR="$PROJECT_DIR/out/logs"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[start-services]${NC} $*"; }
 die()  { echo -e "${RED}[start-services] ERROR:${NC} $*" >&2; exit 1; }
+
+# --- Parse flags ---
+USE_LOCAL=false
+for arg in "$@"; do
+    case "$arg" in
+        --local) USE_LOCAL=true ;;
+        *) die "Unknown argument: $arg" ;;
+    esac
+done
 
 # --- Load .env from project root (if present) ---
 if [[ -f "$PROJECT_DIR/.env" ]]; then
@@ -39,10 +50,64 @@ fi
 
 EXTENSION_ID="${EXTENSION_ID:-}"
 PRIVATE_KEY="${PRIVATE_KEY:-0x983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}"
+LOCAL_MODE="${LOCAL_MODE:-true}"
 
 [[ -n "$EXTENSION_ID" ]] || die "EXTENSION_ID not set. Run pre-build.sh first or set it manually."
 
 log "Extension ID: $EXTENSION_ID"
+log "Local mode:   $LOCAL_MODE"
+
+# ============================================================
+# Docker Compose mode (default)
+# ============================================================
+if [[ "$USE_LOCAL" == "false" ]]; then
+    log "Starting services with Docker Compose..."
+
+    COMPOSE_FILES=("-f" "$PROJECT_DIR/docker-compose.yaml")
+
+    if [[ "$LOCAL_MODE" != "true" ]]; then
+        log "Coston2 mode detected — attaching docker-compose.coston2.yaml"
+        COMPOSE_FILES+=("-f" "$PROJECT_DIR/docker-compose.coston2.yaml")
+    fi
+
+    docker compose "${COMPOSE_FILES[@]}" up -d --build || die "docker compose up failed"
+
+    # Wait for proxy to be ready
+    E2E="$SCRIPT_DIR/e2e.sh"
+    EXT_PROXY_URL="${EXT_PROXY_URL:-http://localhost:6674}"
+    log "Waiting for extension proxy at $EXT_PROXY_URL/info ..."
+    "$E2E" wait-for-url "$EXT_PROXY_URL/info" 120
+
+    echo ""
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN} Services started (Docker Compose)${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo ""
+    echo -e "${CYAN}Mode${NC}"
+    if [[ "$LOCAL_MODE" == "true" ]]; then
+        echo "  Local devnet"
+    else
+        echo "  Coston2 testnet"
+    fi
+    echo ""
+    echo -e "${CYAN}Services${NC}"
+    echo "  redis, ext-proxy, extension-tee"
+    echo "  Proxy URL: $EXT_PROXY_URL"
+    echo ""
+    echo -e "${CYAN}Commands${NC}"
+    echo "  Logs:    docker compose ${COMPOSE_FILES[*]} logs -f"
+    echo "  Stop:    ./scripts/stop-services.sh"
+    exit 0
+fi
+
+# ============================================================
+# Local Go process mode (--local)
+# ============================================================
+log "Starting services as local Go processes (--local)..."
+
+E2E="$SCRIPT_DIR/e2e.sh"
+PID_DIR="$PROJECT_DIR/out/pids"
+LOG_DIR="$PROJECT_DIR/out/logs"
 
 # --- Build Go binaries (once) so we run the actual binary, not `go run` ---
 BIN_DIR="$PROJECT_DIR/out/bin"
@@ -91,7 +156,7 @@ EXT_PROXY_PID=$(cat "$PID_DIR/ext-proxy.pid" 2>/dev/null || echo "?")
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN} Services started${NC}"
+echo -e "${GREEN} Services started (local Go processes)${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${CYAN}Processes${NC}"
@@ -107,4 +172,4 @@ echo "  Proxy log        $LOG_DIR/ext-proxy.log"
 echo ""
 echo -e "${CYAN}Commands${NC}"
 echo "  Status:  $SCRIPT_DIR/e2e.sh status $PID_DIR"
-echo "  Stop:    $SCRIPT_DIR/stop-services.sh"
+echo "  Stop:    $SCRIPT_DIR/stop-services.sh --local"

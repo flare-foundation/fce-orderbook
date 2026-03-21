@@ -1,29 +1,56 @@
 #!/usr/bin/env bash
 #
-# TEMPORARY: Stop extension TEE node and proxy background processes.
-# This script will be replaced by `docker compose down` once the Dockerfile is added.
+# Stop extension services.
+#
+# By default, stops Docker Compose services (matching the compose files based on LOCAL_MODE).
+# Pass --local to stop background Go processes instead.
 #
 # Usage:
-#   ./scripts/stop-services.sh
+#   ./scripts/stop-services.sh              # docker compose down (default)
+#   ./scripts/stop-services.sh --local      # stop background Go processes
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-E2E="$SCRIPT_DIR/e2e.sh"
-PID_DIR="$PROJECT_DIR/out/pids"
 
-echo "Stopping extension services..."
-"$E2E" stop-all "$PID_DIR"
+RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
+log()  { echo -e "${GREEN}[stop-services]${NC} $*"; }
 
-# Kill any orphaned processes still holding TEE/proxy ports.
-for port in 5501 7701 7702 6663 6664; do
-    pid=$(lsof -ti ":$port" 2>/dev/null) || true
-    if [ -n "$pid" ]; then
-        echo "Killing orphaned process on port $port (PID $pid)"
-        kill $pid 2>/dev/null || true
-    fi
+# --- Parse flags ---
+USE_LOCAL=false
+for arg in "$@"; do
+    case "$arg" in
+        --local) USE_LOCAL=true ;;
+        *) echo -e "${RED}[stop-services] ERROR:${NC} Unknown argument: $arg" >&2; exit 1 ;;
+    esac
 done
 
-echo "Stopping Redis container..."
-docker compose -f "$PROJECT_DIR/docker-compose.yaml" down redis 2>/dev/null || true
-echo "Done."
+# --- Load .env from project root (if present) ---
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
+LOCAL_MODE="${LOCAL_MODE:-true}"
+
+if [[ "$USE_LOCAL" == "true" ]]; then
+    # --- Stop background Go processes ---
+    E2E="$SCRIPT_DIR/e2e.sh"
+    PID_DIR="$PROJECT_DIR/out/pids"
+
+    log "Stopping background Go processes..."
+    "$E2E" stop-all "$PID_DIR"
+    log "Done."
+else
+    # --- Stop Docker Compose services ---
+    COMPOSE_FILES=("-f" "$PROJECT_DIR/docker-compose.yaml")
+
+    if [[ "$LOCAL_MODE" != "true" ]]; then
+        COMPOSE_FILES+=("-f" "$PROJECT_DIR/docker-compose.coston2.yaml")
+    fi
+
+    log "Stopping Docker Compose services..."
+    docker compose "${COMPOSE_FILES[@]}" down
+    log "Done."
+fi
