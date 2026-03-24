@@ -87,15 +87,19 @@ contract HelloWorldInstructionSender {
     function sendSayGoodbye(string calldata _name, string calldata _reason) external payable {
         address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
         address[] memory cosigners = new address[](0);
-        uint64 cosignersThreshold = 0;
+
+        ITeeExtensionRegistry.TeeInstructionParams memory params = ITeeExtensionRegistry.TeeInstructionParams({
+            opType: OP_TYPE_GREETING,
+            opCommand: OP_COMMAND_SAY_GOODBYE,
+            message: abi.encode(SayGoodbyeMessage(_name, _reason)),
+            cosigners: cosigners,
+            cosignersThreshold: 0,
+            claimBackAddress: msg.sender
+        });
 
         TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
             teeIds,
-            OP_TYPE_GREETING,
-            OP_COMMAND_SAY_GOODBYE,
-            abi.encode(SayGoodbyeMessage(_name, _reason)),
-            cosigners,
-            cosignersThreshold
+            params
         );
     }
 
