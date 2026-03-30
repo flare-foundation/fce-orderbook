@@ -41,26 +41,45 @@ fi
 NORMAL_PROXY_URL="${NORMAL_PROXY_URL:-http://localhost:6662}"
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
+# Resolve relative paths against PROJECT_DIR (not caller's cwd)
+if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
+fi
 TEE_VERSION="${TEE_VERSION:-v0.1.0}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-120}"
 
 # --- Auto-detect addresses file ---
 if [[ -z "$ADDRESSES_FILE" ]]; then
-    for candidate in \
-        "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../../docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../../../docker/sim_dump/deployed-addresses.json"; do
+    if [[ "$LOCAL_MODE" != "true" ]]; then
+        # Non-local mode: use coston2 deployed addresses
+        candidate="$PROJECT_DIR/config/coston2/deployed-addresses.json"
         if [[ -f "$candidate" ]]; then
             ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
-            break
         fi
-    done
+    fi
+
+    # Fall back to sim_dump candidates (local devnet)
+    if [[ -z "$ADDRESSES_FILE" ]]; then
+        for candidate in \
+            "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../../docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../../../docker/sim_dump/deployed-addresses.json"; do
+            if [[ -f "$candidate" ]]; then
+                ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+                break
+            fi
+        done
+    fi
+
     [[ -n "$ADDRESSES_FILE" ]] || die "Cannot find deployed-addresses.json. Set ADDRESSES_FILE."
 fi
 
 [[ -f "$ADDRESSES_FILE" ]] || die "Addresses file not found: $ADDRESSES_FILE"
+
+# Resolve to absolute path so it works after cd into tools/
+ADDRESSES_FILE="$(cd "$(dirname "$ADDRESSES_FILE")" && pwd)/$(basename "$ADDRESSES_FILE")"
 
 log "Extension proxy: $EXT_PROXY_URL"
 log "Normal proxy:    $NORMAL_PROXY_URL"
@@ -96,11 +115,6 @@ wait_for_url "$NORMAL_PROXY_URL/info" "Normal proxy"
 step 1 "Allow TEE version"
 cd "$PROJECT_DIR/tools"
 
-LOCAL_FLAG=""
-if [[ "$LOCAL_MODE" == "true" ]]; then
-    LOCAL_FLAG="-l"
-fi
-
 go run ./cmd/allow-tee-version \
     -a "$ADDRESSES_FILE" \
     -c "$CHAIN_URL" \
@@ -116,7 +130,7 @@ go run ./cmd/register-tee \
     -p "$EXT_PROXY_URL" \
     -h "${EXT_PROXY_HOST_URL:-$EXT_PROXY_URL}" \
     -ep "$NORMAL_PROXY_URL" \
-    $LOCAL_FLAG \
+    -l \
     || die "Register TEE failed"
 
 echo ""

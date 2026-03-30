@@ -279,57 +279,136 @@ Or run everything (pre-build + post-build + test) in one shot:
 ./scripts/full-setup.sh --test
 ```
 
-## Local Development (without Docker for Go services)
+## Deploying to Coston2
 
-For faster iteration — e.g. adding print statements, tweaking logic — you can run the proxy and TEE node as Go processes while keeping only Redis in Docker. This avoids rebuilding Docker images on every change.
+Coston2 is Flare's public testnet. Unlike local dev (which runs against a Hardhat node with pre-deployed contracts), Coston2 deployment connects to the live testnet RPC, uses real signing policies, and requires a publicly accessible proxy URL.
 
-#### 1. Run pre-build (if not already done)
+### Prerequisites
+
+- A **funded Coston2 account** — you need a private key with testnet C2FLR for gas. Get testnet tokens from the [Coston2 faucet](https://faucet.flare.network/coston2).
+- **ngrok** (or similar tunneling tool) — the TEE proxy must be publicly reachable so data providers can deliver cosigned responses. Install from [ngrok.com](https://ngrok.com).
+- **Indexer DB credentials** — the proxy needs access to a Flare indexer database to fetch signing policies. Ask the Flare team for credentials, or use the values in the example config.
+
+### 1. Configure `.env`
+
+Copy `.env.example` and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Key values to set:
+
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `PRIV_KEY` | Your funded Coston2 private key | Used for contract deployments and on-chain calls |
+| `INITIAL_OWNER` | Address derived from `PRIV_KEY` | Owner of deployed contracts |
+| `PRIVATE_KEY` | Same or different funded key | Used by the proxy for signing |
+| `CHAIN_URL` | `https://coston2-api.flare.network/ext/C/rpc` | Coston2 RPC endpoint |
+| `ADDRESSES_FILE` | `./config/coston2/deployed-addresses.json` | Pre-populated with Coston2 contract addresses |
+| `LOCAL_MODE` | `false` | **Must be `false`** on live networks (enables attestation) |
+| `NORMAL_PROXY_URL` | `https://tee-proxy-coston2-1.flare.rocks` | Flare's Coston2 normal/FTDC proxy |
+| `EXT_PROXY_URL` | `https://<your-subdomain>.ngrok-free.dev` | Your ngrok tunnel URL (see step 3) |
+
+### 2. Configure the proxy
+
+The proxy config files live in `config/proxy/`. For Coston2, there are two files:
+
+- **`extension_proxy.coston2.docker.toml`** — used inside Docker (references `redis` service name)
+- **`extension_proxy.coston2.toml`** — used when running the proxy outside Docker
+
+Copy from the example files if starting fresh:
+
+```bash
+cp config/proxy/extension_proxy.coston2.docker.toml.example config/proxy/extension_proxy.coston2.docker.toml
+cp config/proxy/extension_proxy.coston2.toml.example config/proxy/extension_proxy.coston2.toml
+```
+
+Then fill in the `[db]` section with your indexer database credentials:
+
+```toml
+[db]
+host = "<indexer-db-host>"
+port = 3306
+database = "<indexer-db-name>"
+username = "<indexer-db-user>"
+password = "<indexer-db-password>"
+log_queries = false
+```
+
+The Coston2 contract addresses (`flare_systems_manager`, `relay`, `voter_registry`) are already set correctly in the example files. The `chain_id` is `114` (Coston2).
+
+### 3. Start ngrok
+
+The extension proxy must be publicly accessible so that data providers can reach it. Start an ngrok tunnel pointing to the proxy's external port (6674):
+
+```bash
+ngrok http 6674
+```
+
+Copy the generated HTTPS URL (e.g., `https://abc123.ngrok-free.dev`) and set it as `EXT_PROXY_URL` in your `.env`.
+
+### 4. Pre-build (deploy & register)
 
 ```bash
 ./scripts/pre-build.sh
 ```
 
-#### 2. Start the Go processes
+This deploys your `InstructionSender` contract to Coston2 and registers your extension on the `TeeExtensionRegistry`. The scripts auto-detect Coston2 addresses when `LOCAL_MODE=false`.
 
-The `start-services.sh` script starts Redis (port 6382), the TEE node, and the proxy automatically:
+### 5. Start services (Docker Compose)
 
-```bash
-./scripts/start-services.sh
-```
-
-The extension proxy uses its own Redis on port 6382, separate from the infrastructure Redis on port 6380. This prevents queue collisions between the extension proxy and the normal/infrastructure proxy.
-
-Or run manually in separate terminals:
+On Coston2, use the override file that swaps in the Coston2 proxy config and chain URL:
 
 ```bash
-# Terminal 1: Extension Redis (separate from infrastructure Redis on 6380)
-redis-server --port 6382 --save "" --appendonly no
-
-# Terminal 2: Extension TEE node
-cd tools && go run ./cmd/start-tee -extensionID <your-extension-id>
-
-# Terminal 3: Extension proxy
-cd tools && go run ./cmd/start-proxy
+docker compose -f docker-compose.yaml -f docker-compose.coston2.yaml up -d --build
 ```
 
-The extension ID is in `config/extension.env` after pre-build.
+This does the same as the local `docker compose up` but:
+- Mounts `config/proxy/extension_proxy.coston2.docker.toml` instead of the local proxy config
+- Sets `CHAIN_URL` to the Coston2 RPC endpoint
+- Creates its own network (`extension-scaffold-coston2`) instead of joining the local e2e `docker_default` network
 
-#### 3. Post-build and test
+Check status:
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.coston2.yaml ps
+docker compose -f docker-compose.yaml -f docker-compose.coston2.yaml logs -f extension-tee
+```
+
+### 6. Post-build (register TEE)
 
 ```bash
 ./scripts/post-build.sh
+```
+
+This registers the TEE version and TEE machine on-chain. It reads `EXT_PROXY_URL` and `NORMAL_PROXY_URL` from your `.env`, so make sure ngrok is running and the URL is correct.
+
+### 7. Test
+
+```bash
 ./scripts/test.sh
 ```
 
-#### Iterating
+Sends instructions on-chain via your deployed `InstructionSender` and polls the proxy for results.
 
-To pick up code changes, just `Ctrl+C` the Go process and re-run it. Redis and the other process can keep running. There's no image rebuild step.
-
-To stop all services:
+### Stopping Coston2 services
 
 ```bash
-./scripts/stop-services.sh
+docker compose -f docker-compose.yaml -f docker-compose.coston2.yaml down
 ```
+
+### Coston2 vs Local Dev — Key Differences
+
+| | Local Dev | Coston2 |
+|---|-----------|---------|
+| Chain | Hardhat (`localhost:8545`) | `coston2-api.flare.network` |
+| `LOCAL_MODE` | `true` (skip attestation) | `false` (real attestation) |
+| Proxy config | `extension_proxy.docker.toml` | `extension_proxy.coston2.docker.toml` |
+| Indexer DB | Local `indexer-db` container | Remote Flare indexer |
+| Network | Joins `docker_default` (e2e infra) | Own `extension-scaffold-coston2` network |
+| Proxy accessibility | `localhost:6674` | Public URL via ngrok |
+| Normal proxy | `localhost:6662` | `https://tee-proxy-coston2-1.flare.rocks` |
+| Docker command | `docker compose up -d --build` | `docker compose -f docker-compose.yaml -f docker-compose.coston2.yaml up -d --build` |
 
 ## Further Reading
 

@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/flare-foundation/go-flare-common/pkg/contracts/ftdchub"
+	"github.com/flare-foundation/go-flare-common/pkg/contracts/fdc2hub"
 	"github.com/flare-foundation/go-flare-common/pkg/contracts/system"
 	"github.com/flare-foundation/go-flare-common/pkg/contracts/teeextensionregistry"
 	"github.com/flare-foundation/go-flare-common/pkg/contracts/teemachineregistry"
@@ -39,7 +39,7 @@ type Support struct {
 	TeeWalletProjectManager *teewalletprojectmanager.TeeWalletProjectManager
 	TeeWalletManager        *teewalletmanager.TeeWalletManager
 	TeeWalletKeyManager     *teewalletkeymanager.TeeWalletKeyManager
-	FtdcHub                 *ftdchub.FtdcHub
+	Fdc2Hub                 *fdc2hub.Fdc2Hub
 	TeeVerification         *teeverification.TeeVerification
 	TeeExtensionRegistry    *teeextensionregistry.TeeExtensionRegistry
 	TeeOwnerAllowlist       *teeownerallowlist.TeeOwnerAllowlist
@@ -56,7 +56,7 @@ type Addresses struct {
 	TeeWalletKeyManager     common.Address `json:"TeeWalletKeyManager"`
 	TeeWalletProjectManager common.Address `json:"TeeWalletProjectManager"`
 	FlareSystemManager      common.Address `json:"FlareSystemsManager"`
-	FtdcHub                 common.Address `json:"FtdcHub"`
+	Fdc2Hub                 common.Address `json:"Fdc2Hub"`
 	TeeVerification         common.Address `json:"TeeVerification"`
 	TeeExtensionRegistry    common.Address `json:"TeeExtensionRegistry"`
 	TeeOwnerAllowlist       common.Address `json:"TeeOwnerAllowlist"`
@@ -93,6 +93,7 @@ func DefaultPrivateKey() (*ecdsa.PrivateKey, error) {
 	fmt.Printf("privKeyString: %s\n", privKeyString)
 
 	if privKeyString == "" {
+		fmt.Println("Warning: PRIV_KEY not set, falling back to hardcoded dev key (only works on local devnet)")
 		return configs.PrvWithFunds, nil
 	} else {
 		if strings.HasPrefix(privKeyString, "0x") || strings.HasPrefix(privKeyString, "0X") {
@@ -133,7 +134,7 @@ func NewSupport(prv *ecdsa.PrivateKey, chainClient *ethclient.Client, addresses 
 		return nil, err
 	}
 
-	ftdc, err := ftdchub.NewFtdcHub(addresses.FtdcHub, chainClient)
+	ftdc, err := fdc2hub.NewFdc2Hub(addresses.Fdc2Hub, chainClient)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +166,7 @@ func NewSupport(prv *ecdsa.PrivateKey, chainClient *ethclient.Client, addresses 
 		TeeWalletKeyManager:     twkm,
 		TeeWalletProjectManager: twpm,
 		FlareSystemManager:      sm,
-		FtdcHub:                 ftdc,
+		Fdc2Hub:                 ftdc,
 		TeeVerification:         tv,
 		TeeExtensionRegistry:    ter,
 		ChainClient:             chainClient,

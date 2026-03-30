@@ -44,26 +44,46 @@ if [[ -z "${EXT_PROXY_URL:-}" ]]; then
 fi
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 ADDRESSES_FILE="${ADDRESSES_FILE:-}"
+# Resolve relative paths against PROJECT_DIR (not caller's cwd)
+if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
+fi
 INSTRUCTION_SENDER="${INSTRUCTION_SENDER:-}"
 
 [[ -n "$INSTRUCTION_SENDER" ]] || die "INSTRUCTION_SENDER not set. Run pre-build.sh first or set it manually."
 
 # --- Auto-detect addresses file ---
+LOCAL_MODE="${LOCAL_MODE:-true}"
 if [[ -z "$ADDRESSES_FILE" ]]; then
-    for candidate in \
-        "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../../docker/sim_dump/deployed-addresses.json" \
-        "$PROJECT_DIR/../../../docker/sim_dump/deployed-addresses.json"; do
+    if [[ "$LOCAL_MODE" != "true" ]]; then
+        # Non-local mode: use coston2 deployed addresses
+        candidate="$PROJECT_DIR/config/coston2/deployed-addresses.json"
         if [[ -f "$candidate" ]]; then
             ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
-            break
         fi
-    done
+    fi
+
+    # Fall back to sim_dump candidates (local devnet)
+    if [[ -z "$ADDRESSES_FILE" ]]; then
+        for candidate in \
+            "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../../docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../../../docker/sim_dump/deployed-addresses.json"; do
+            if [[ -f "$candidate" ]]; then
+                ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+                break
+            fi
+        done
+    fi
+
     [[ -n "$ADDRESSES_FILE" ]] || die "Cannot find deployed-addresses.json. Set ADDRESSES_FILE."
 fi
 
 [[ -f "$ADDRESSES_FILE" ]] || die "Addresses file not found: $ADDRESSES_FILE"
+
+# Resolve to absolute path so it works after cd into tools/
+ADDRESSES_FILE="$(cd "$(dirname "$ADDRESSES_FILE")" && pwd)/$(basename "$ADDRESSES_FILE")"
 
 log "Extension proxy:    $EXT_PROXY_URL"
 log "Chain URL:          $CHAIN_URL"

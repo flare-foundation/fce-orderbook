@@ -6,6 +6,8 @@ private_key_variable = "PRIVATE_KEY"
 initial_signing_policy_offset = 0
 signing_policy_fetch_interval = "20s"
 
+chain_id = 114
+
 [db]
 host = "host.docker.internal"
 port = 3306
