@@ -35,7 +35,28 @@ Use the values from `.env` for ADDRESSES_FILE and CHAIN_URL. If `.env` doesn't s
 - ADDRESSES_FILE: auto-detected (same logic as pre-build.sh)
 - CHAIN_URL: http://127.0.0.1:8545
 
-To check only a specific step: add `--step deploy` (or register, services, tee-version, tee-machine, test).
+**Scope flags — use these to avoid running everything when you only need one thing:**
+
+- `--step <name>` — limit to a single step group. Values: `deploy`, `register`, `services`, `tee-version`, `tee-machine`, `test`, `all` (default).
+- `--checks <IDs>` — further filter to specific check IDs within the selected step (comma-separated, e.g. `D5,R2`). All other checks are hidden and don't count toward failures.
+
+Examples:
+```bash
+# Only the deploy step
+--step deploy
+
+# Only the deployer-key/balance check within deploy
+--step deploy --checks D5
+
+# Only the instruction-sender mismatch check (no step needed — runs all steps, shows only R2)
+--checks R2
+
+# Check whether the proxy is reachable for TEE version registration
+--step tee-version --checks V6
+```
+
+When diagnosing a specific error code (e.g. the user says "R3 is failing"), use `--checks R3` so the output is focused.
+When doing a pre-flight before a long operation, use `--step deploy` to avoid waiting for service/network checks that aren't relevant yet.
 
 ### Step 3: Interpret results
 

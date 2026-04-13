@@ -3,7 +3,6 @@ package fccutils
 import (
 	"context"
 	"math/big"
-
 	"extension-scaffold/tools/pkg/support"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -34,9 +33,7 @@ func SetupExtension(
 		return nil, err
 	}
 
-	// Step 1: Register the extension.
-	// Duplicate-sender detection belongs in verify-deploy (check R7), not here.
-	// pre-build.sh always deploys a fresh InstructionSender, so no scan is needed.
+	// Step 1: Register the extension
 	extRegistered, _, err := registerExtension(s, opts, instructionsSenderAddress, stateVerifierAddress)
 	if err != nil {
 		return nil, err
@@ -91,6 +88,7 @@ func SetupExtension(
 
 	return extensionID, nil
 }
+
 
 func AddSupportedKeyTypes(s *support.Support, extensionId *big.Int, keyTypes []common.Hash) error {
 	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
