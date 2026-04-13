@@ -25,4 +25,7 @@ docs/superpowers
 
 notes/
 
+# Private deployment guide (SSH, redeploy instructions)
+DEPLOYMENT.md
+
 config/**/*.log

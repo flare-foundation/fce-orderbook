@@ -63,6 +63,26 @@ log "Local mode:   $LOCAL_MODE"
 if [[ "$USE_LOCAL" == "false" ]]; then
     log "Starting services with Docker Compose..."
 
+    # --- Build tee-proxy image locally if no remote registry is configured ---
+    if [[ -z "${REGISTRY:-}" ]]; then
+        if ! docker image inspect local/tee-proxy >/dev/null 2>&1; then
+            TEE_ROOT="$(cd "$PROJECT_DIR/../.." && pwd)"
+            TEE_PROXY_DIR="$TEE_ROOT/tee-proxy"
+            TEE_NODE_DIR="$TEE_ROOT/tee-node"
+            if [[ ! -d "$TEE_PROXY_DIR" ]]; then
+                die "Image local/tee-proxy not found and tee-proxy repo not present at $TEE_PROXY_DIR.\n  Either set REGISTRY in .env to pull from a remote registry, or clone the tee-proxy repo into $TEE_ROOT/."
+            fi
+            if [[ ! -d "$TEE_NODE_DIR" ]]; then
+                die "Image local/tee-proxy not found and tee-node repo not present at $TEE_NODE_DIR.\n  The tee-proxy Dockerfile requires tee-node as a build dependency. Clone tee-node into $TEE_ROOT/."
+            fi
+            log "Building local/tee-proxy image from $TEE_PROXY_DIR..."
+            docker build -f "$TEE_PROXY_DIR/Dockerfile" -t local/tee-proxy "$TEE_ROOT" || die "Failed to build tee-proxy image"
+            log "local/tee-proxy image built successfully"
+        else
+            log "local/tee-proxy image already exists (use 'docker rmi local/tee-proxy' to force rebuild)"
+        fi
+    fi
+
     COMPOSE_FILES=("-f" "$PROJECT_DIR/docker-compose.yaml")
 
     if [[ "$LOCAL_MODE" != "true" ]]; then
