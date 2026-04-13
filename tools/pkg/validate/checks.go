@@ -119,14 +119,14 @@ func RegisterDeployChecks(r *Report, client *ethclient.Client, key *ecdsa.Privat
 
 // CheckDeployerKeySource checks whether the deployer private key is configured.
 func CheckDeployerKeySource() CheckResult {
-	privKey := os.Getenv("PRIV_KEY")
+	privKey := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
 	if privKey != "" {
 		return CheckResult{
 			Step:    "deploy",
 			ID:      "D5",
 			Name:    "deployer key source",
 			Status:  PASS,
-			Message: "PRIV_KEY is set",
+			Message: "DEPLOYMENT_PRIVATE_KEY is set",
 		}
 	}
 
@@ -146,8 +146,8 @@ func CheckDeployerKeySource() CheckResult {
 		ID:      "D5",
 		Name:    "deployer key source",
 		Status:  WARN,
-		Message: "PRIV_KEY not set — using Hardhat dev key which has no funds on Coston2",
-		Fix:     "Set PRIV_KEY in .env to a funded account on the target network",
+		Message: "DEPLOYMENT_PRIVATE_KEY not set — using Hardhat dev key which has no funds on Coston2",
+		Fix:     "Set DEPLOYMENT_PRIVATE_KEY in .env to a funded account on the target network",
 	}
 }
 
@@ -668,14 +668,14 @@ func RegisterServicesChecks(r *Report, extensionEnvPath string) {
 		}
 	}
 
-	// S10: PRIVATE_KEY set on non-local.
+	// S10: PROXY_PRIVATE_KEY set on non-local.
 	localMode := os.Getenv("LOCAL_MODE")
-	privateKey := os.Getenv("PRIVATE_KEY")
+	privateKey := os.Getenv("PROXY_PRIVATE_KEY")
 	if localMode == "true" || localMode == "" {
 		r.Add(CheckResult{
 			Step:    "services",
 			ID:      "S10",
-			Name:    "PRIVATE_KEY set on non-local",
+			Name:    "PROXY_PRIVATE_KEY set on non-local",
 			Status:  PASS,
 			Message: "local mode, dev key OK",
 		})
@@ -683,18 +683,18 @@ func RegisterServicesChecks(r *Report, extensionEnvPath string) {
 		r.Add(CheckResult{
 			Step:    "services",
 			ID:      "S10",
-			Name:    "PRIVATE_KEY set on non-local",
+			Name:    "PROXY_PRIVATE_KEY set on non-local",
 			Status:  WARN,
-			Message: "PRIVATE_KEY not set in non-local mode — proxy will use default key",
-			Fix:     "Set PRIVATE_KEY in .env for non-local deployments",
+			Message: "PROXY_PRIVATE_KEY not set in non-local mode — proxy will use default key",
+			Fix:     "Set PROXY_PRIVATE_KEY in .env for non-local deployments",
 		})
 	} else {
 		r.Add(CheckResult{
 			Step:    "services",
 			ID:      "S10",
-			Name:    "PRIVATE_KEY set on non-local",
+			Name:    "PROXY_PRIVATE_KEY set on non-local",
 			Status:  PASS,
-			Message: "PRIVATE_KEY is configured",
+			Message: "PROXY_PRIVATE_KEY is configured",
 		})
 	}
 }
@@ -703,7 +703,7 @@ func RegisterServicesChecks(r *Report, extensionEnvPath string) {
 func RegisterTeeVersionChecks(r *Report, extensionEnvPath string) {
 	// V2: Extension owner key.
 	extOwnerKey := os.Getenv("EXTENSION_OWNER_KEY")
-	privKey := os.Getenv("PRIV_KEY")
+	privKey := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
 	localMode := os.Getenv("LOCAL_MODE")
 
 	if extOwnerKey != "" {
@@ -720,7 +720,7 @@ func RegisterTeeVersionChecks(r *Report, extensionEnvPath string) {
 			ID:      "V2",
 			Name:    "extension owner key",
 			Status:  PASS,
-			Message: "using PRIV_KEY (EXTENSION_OWNER_KEY not set)",
+			Message: "using DEPLOYMENT_PRIVATE_KEY (EXTENSION_OWNER_KEY not set)",
 		})
 	} else if localMode != "true" && localMode != "" {
 		r.Add(CheckResult{
@@ -728,8 +728,8 @@ func RegisterTeeVersionChecks(r *Report, extensionEnvPath string) {
 			ID:      "V2",
 			Name:    "extension owner key",
 			Status:  WARN,
-			Message: "neither EXTENSION_OWNER_KEY nor PRIV_KEY set — AddTeeVersion will use dev key which isn't the extension owner on Coston2",
-			Fix:     "Set EXTENSION_OWNER_KEY or PRIV_KEY in .env",
+			Message: "neither EXTENSION_OWNER_KEY nor DEPLOYMENT_PRIVATE_KEY set — AddTeeVersion will use dev key which isn't the extension owner on Coston2",
+			Fix:     "Set EXTENSION_OWNER_KEY or DEPLOYMENT_PRIVATE_KEY in .env",
 		})
 	} else {
 		r.Add(CheckResult{

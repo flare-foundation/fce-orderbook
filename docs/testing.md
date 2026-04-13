@@ -47,7 +47,7 @@ Defaults: `CHAIN_URL=http://127.0.0.1:8545`, addresses file at `config/coston2/d
 
 ```bash
 cd tools && CHAIN_URL=https://coston2-api.flare.network/ext/C/rpc \
-  PRIV_KEY=<your-funded-key> \
+  DEPLOYMENT_PRIVATE_KEY=<your-funded-key> \
   go test -tags integration ./integration/ -v -count=1
 ```
 
@@ -57,7 +57,7 @@ cd tools && CHAIN_URL=https://coston2-api.flare.network/ext/C/rpc \
 |----------|---------|-------------|
 | `CHAIN_URL` | `http://127.0.0.1:8545` | RPC endpoint |
 | `ADDRESSES_FILE` | `../../config/coston2/deployed-addresses.json` | Path to deployed registry addresses |
-| `PRIV_KEY` | Hardhat dev key | Funded private key for deployments and transactions |
+| `DEPLOYMENT_PRIVATE_KEY` | Hardhat dev key | Funded private key for deployments and transactions |
 
 **Note:** Integration tests deploy fresh contracts on each run. On Coston2, this costs gas. On a local node, it's free.
 

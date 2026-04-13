@@ -4,7 +4,7 @@
 # Inputs (env vars):
 #   ADDRESSES_FILE  — path to deployed-addresses.json (auto-detected if unset)
 #   CHAIN_URL       — chain RPC URL (default: http://127.0.0.1:8545)
-#   PRIV_KEY        — funded private key (default: Hardhat account)
+#   DEPLOYMENT_PRIVATE_KEY — funded private key (default: Hardhat account)
 #
 # Outputs:
 #   config/extension.env — EXTENSION_ID and INSTRUCTION_SENDER

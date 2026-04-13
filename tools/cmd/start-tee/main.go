@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"runtime"
 	"syscall"
 	"time"
@@ -95,7 +96,7 @@ func setOwnerAddress() common.Address {
 	if owner == "" {
 		var privKey *ecdsa.PrivateKey
 		var err error
-		privKeyString := os.Getenv("PRIV_KEY")
+		privKeyString := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
 		if privKeyString == "" {
 			// Default Hardhat-funded key.
 			privKey, err = crypto.HexToECDSA("804b01a8c27a65cc694a867be76edae3ccce7a7161cda1f67a8349df696d2207")
@@ -103,6 +104,9 @@ func setOwnerAddress() common.Address {
 				panic("cannot parse default private key")
 			}
 		} else {
+			if strings.HasPrefix(privKeyString, "0x") || strings.HasPrefix(privKeyString, "0X") {
+				privKeyString = privKeyString[2:]
+			}
 			privKey, err = crypto.HexToECDSA(privKeyString)
 			if err != nil {
 				fccutils.FatalWithCause(err)

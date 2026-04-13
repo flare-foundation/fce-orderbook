@@ -93,10 +93,10 @@ func DefaultPrivateKey() (*ecdsa.PrivateKey, error) {
 	if err := godotenv.Load(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Error loading .env file: %v\n", err)
 	}
-	privKeyString := os.Getenv("PRIV_KEY")
+	privKeyString := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
 
 	if privKeyString == "" {
-		fmt.Fprintln(os.Stderr, "WARNING: PRIV_KEY not set — using hardcoded Hardhat dev key")
+		fmt.Fprintln(os.Stderr, "WARNING: DEPLOYMENT_PRIVATE_KEY not set — using hardcoded Hardhat dev key")
 		fmt.Fprintln(os.Stderr, "         This key only has funds on local devnets (Hardhat/Anvil)")
 		return configs.PrvWithFunds, nil
 	} else {

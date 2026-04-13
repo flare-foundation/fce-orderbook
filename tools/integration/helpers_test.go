@@ -11,14 +11,14 @@
 // Against Coston2:
 //
 //	cd tools && CHAIN_URL=https://coston2-api.flare.network/ext/C/rpc \
-//	  PRIV_KEY=<funded-key> \
+//	  DEPLOYMENT_PRIVATE_KEY=<funded-key> \
 //	  go test -tags integration ./integration/ -v -count=1
 //
 // Environment variables:
 //
 //	CHAIN_URL       — RPC endpoint (default: http://127.0.0.1:8545)
 //	ADDRESSES_FILE  — path to deployed-addresses.json (default: ../../config/coston2/deployed-addresses.json)
-//	PRIV_KEY        — funded private key hex (default: Hardhat dev key)
+//	DEPLOYMENT_PRIVATE_KEY        — funded private key hex (default: Hardhat dev key)
 package integration
 
 import (

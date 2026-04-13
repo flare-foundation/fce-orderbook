@@ -1,0 +1,10 @@
+# Runtime files
+agents/*/results/audit.log
+agents/chaos/worktree/
+*.lock
+
+# Session files
+agents/*/.session-id
+
+# Deployment scripts with project-specific config (not for public repo)
+scripts/launch-gcp.sh

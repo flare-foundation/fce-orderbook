@@ -49,7 +49,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
 fi
 
 EXTENSION_ID="${EXTENSION_ID:-}"
-PRIVATE_KEY="${PRIVATE_KEY:-0x983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}"
+PROXY_PRIVATE_KEY="${PROXY_PRIVATE_KEY:-0x983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
 
 [[ -n "$EXTENSION_ID" ]] || die "EXTENSION_ID not set. Run pre-build.sh first or set it manually."
@@ -151,7 +151,7 @@ log "Redis on :6382 ready"
 
 # --- Start extension proxy ---
 log "Starting extension proxy..."
-PRIVATE_KEY="$PRIVATE_KEY" "$E2E" start ext-proxy "$PID_DIR/ext-proxy.pid" "$LOG_DIR/ext-proxy.log" \
+PROXY_PRIVATE_KEY="$PROXY_PRIVATE_KEY" "$E2E" start ext-proxy "$PID_DIR/ext-proxy.pid" "$LOG_DIR/ext-proxy.log" \
     "$BIN_DIR/start-proxy"
 
 cd "$PROJECT_DIR"
