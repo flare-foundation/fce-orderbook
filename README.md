@@ -279,6 +279,20 @@ Or run everything (pre-build + post-build + test) in one shot:
 ./scripts/full-setup.sh --test
 ```
 
+### Unit and integration tests
+
+The tooling includes unit tests (no chain required) and integration tests (run against any EVM chain):
+
+```bash
+# Unit tests — always safe to run
+cd tools && go test ./...
+
+# Integration tests — requires a running chain node
+cd tools && go test -tags integration ./integration/ -v -count=1
+```
+
+See the [Testing Guide](docs/testing.md) for details on what each layer covers and how to configure the integration tests for local or Coston2.
+
 ## Deploying to Coston2
 
 Coston2 is Flare's public testnet. Unlike local dev (which runs against a Hardhat node with pre-deployed contracts), Coston2 deployment connects to the live testnet RPC, uses real signing policies, and requires a publicly accessible proxy URL.

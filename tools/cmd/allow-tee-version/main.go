@@ -42,12 +42,23 @@ func main() {
 		privKey = testSupport.Prv
 	}
 
+	keySource := "EXTENSION_OWNER_KEY"
+	if privKeyString == "" {
+		keySource = "PRIV_KEY (default)"
+	}
+	logger.Infof("Using key: %s (deployer: %s)", keySource, crypto.PubkeyToAddress(privKey.PublicKey).Hex())
+
 	teeID, _, err := fccutils.TeeProxyId(teeInfo)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
 
-	logger.Infof("registering version: %s, %s, extension: %v tee id: %s", teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, teeInfo.MachineData.ExtensionID.Big(), teeID)
+	logger.Infof("Code hash:    %s (source: proxy /info)", teeInfo.MachineData.CodeHash.Hex())
+	logger.Infof("Platform:     %s (source: proxy /info)", teeInfo.MachineData.Platform.Hex())
+	logger.Infof("Extension ID: %s", teeInfo.MachineData.ExtensionID.Big().String())
+	logger.Infof("TEE ID:       %s", teeID.Hex())
+	logger.Infof("Version:      %s", *versionF)
+	logger.Warnf("NOTE: Code hash is from proxy /info response — not independently verified against attestation")
 	err = fccutils.AddTeeVersion(testSupport, privKey, teeInfo.MachineData.ExtensionID.Big(), teeInfo.MachineData.CodeHash, teeInfo.MachineData.Platform, common.Hash{}, *versionF)
 	if err != nil {
 		if strings.Contains(err.Error(), "VersionAlreadyExists") {

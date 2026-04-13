@@ -69,12 +69,20 @@ func runExtension() {
 	// Start tee-node in extension mode.
 	go teeServer.StartServerExtension(ExtConfigurationPort, ExtensionServerPort, ExtensionPort)
 
-	// Start echo extension server.
-	echoserver.StartExtension(ExtensionPort, ExtensionServerPort)
+	// Start extension server — fail fast if port binding fails.
+	extErrCh := echoserver.StartExtension(ExtensionPort, ExtensionServerPort)
+
+	// Give server a moment to bind, then check for early failures.
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case err := <-extErrCh:
+		logger.Fatalf("extension server failed to start: %v", err)
+	default:
+	}
 
 	logger.Infof("Starting echo extension TEE on port %d", ExtConfigurationPort)
 
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 
 	err := fccutils.SetProxyUrl(ExtConfigurationPort, ExtProxyInternalPort)
 	if err != nil {

@@ -78,6 +78,16 @@ if [[ "$USE_LOCAL" == "false" ]]; then
     log "Waiting for extension proxy at $EXT_PROXY_URL/info ..."
     "$E2E" wait-for-url "$EXT_PROXY_URL/info" 120
 
+    # Validate EXTENSION_ID is recognized by proxy
+    log "Validating EXTENSION_ID against proxy..."
+    PROXY_INFO=$(curl -sf "$EXT_PROXY_URL/info" 2>/dev/null || true)
+    if [[ -n "$PROXY_INFO" ]]; then
+        if ! echo "$PROXY_INFO" | grep -q "$EXTENSION_ID" 2>/dev/null; then
+            echo -e "${RED}WARNING: EXTENSION_ID $EXTENSION_ID not found in proxy /info response${NC}" >&2
+            echo -e "${RED}The proxy may be filtering for a different extension. Check config.${NC}" >&2
+        fi
+    fi
+
     echo ""
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN} Services started (Docker Compose)${NC}"
@@ -147,6 +157,9 @@ PRIVATE_KEY="$PRIVATE_KEY" "$E2E" start ext-proxy "$PID_DIR/ext-proxy.pid" "$LOG
 cd "$PROJECT_DIR"
 
 # --- Wait for proxy to be ready ---
+if [[ "$EXT_PROXY_URL" != *"localhost"* && "$EXT_PROXY_URL" != *"127.0.0.1"* ]]; then
+    log "NOTE: EXT_PROXY_URL=$EXT_PROXY_URL (not localhost) — health check targets this URL"
+fi
 log "Waiting for extension proxy..."
 "$E2E" wait-for-url "http://localhost:6664/info" 60
 

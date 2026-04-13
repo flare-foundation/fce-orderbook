@@ -16,9 +16,9 @@ func main() {
 	pf := flag.String("p", configs.ExtensionProxyURL, "extension proxy url (used to query TEE info)")
 	hf := flag.String("h", "", "host url to register on-chain (defaults to -p if not set)")
 	epf := flag.String("ep", "http://localhost:6662", "external proxy url (for FTDC)")
-	lf := flag.Bool("l", false, "local")
 	instructionF := flag.String("i", "", "instructionID")
 	command := flag.String("command", "rap", "command (rap)")
+	stateFile := flag.String("state", "../config/register-tee.state", "state file for resume support")
 
 	flag.Parse()
 
@@ -44,7 +44,7 @@ func main() {
 	}
 
 	// to check if things are ok
-	_, _, err = fccutils.GetCodeHashAndPlatform(teeInfo, *lf)
+	_, _, err = fccutils.GetCodeHashAndPlatform(teeInfo)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
@@ -55,7 +55,7 @@ func main() {
 	}
 
 	logger.Infof("Registration of TEE with ID %s", hex.EncodeToString(teeID[:]))
-	err = fccutils.RegisterNode(testSupport, teeInfo, hostURL, *epf, ftdcTeeID, *command, *instructionF)
+	err = fccutils.RegisterNode(testSupport, teeInfo, hostURL, *epf, ftdcTeeID, *command, *instructionF, *stateFile)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
