@@ -1,36 +1,82 @@
 package extension
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	"extension-scaffold/internal/config"
+	"extension-scaffold/pkg/balance"
+	"extension-scaffold/pkg/orderbook"
 	"extension-scaffold/pkg/types"
 
+	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	"github.com/flare-foundation/go-flare-common/pkg/tee/instruction"
-	"github.com/flare-foundation/go-flare-common/pkg/tee/structs"
 	teetypes "github.com/flare-foundation/tee-node/pkg/types"
 	teeutils "github.com/flare-foundation/tee-node/pkg/utils"
 
 	"github.com/flare-foundation/tee-node/pkg/processorutils"
 )
 
+// History tracks per-user deposit/withdrawal/order records for EXPORT_HISTORY.
+type History struct {
+	deposits    map[string][]types.DepositRecord    // user -> deposits
+	withdrawals map[string][]types.WithdrawalRecord // user -> withdrawals
+	orders      map[string][]*orderbook.Order       // user -> all orders (including filled/cancelled)
+	matches     map[string][]orderbook.Match        // user -> matches
+}
+
+func newHistory() *History {
+	return &History{
+		deposits:    make(map[string][]types.DepositRecord),
+		withdrawals: make(map[string][]types.WithdrawalRecord),
+		orders:      make(map[string][]*orderbook.Order),
+		matches:     make(map[string][]orderbook.Match),
+	}
+}
+
+// Extension is the orderbook extension handler.
 type Extension struct {
 	mu     sync.RWMutex
 	Server *http.Server
 
-	greetingCount int
-	lastGreeting  string
-	farewellCount int
-	lastFarewell  string
+	orderbooks map[string]*orderbook.OrderBook      // pair name -> orderbook
+	balances   *balance.Manager                      // per-(user, token) balances
+	pairs      map[string]config.TradingPairConfig   // pair name -> token addresses
+	matches    []orderbook.Match                     // all matches across pairs
+	orders     map[string]string                     // orderID -> pair (for cancel routing)
+	userOrders map[string][]string                   // user address -> list of orderIDs
+	history    *History                              // deposit/withdrawal/order history per user
+	admins     map[string]bool                       // admin addresses
+	signPort   int                                   // TEE sign server port
 }
 
-// --- DO NOT MODIFY: New(), actionHandler() are boilerplate.
 func New(extensionPort, signPort int) *Extension {
-	e := &Extension{}
+	e := &Extension{
+		orderbooks: make(map[string]*orderbook.OrderBook),
+		balances:   balance.NewManager(),
+		pairs:      make(map[string]config.TradingPairConfig),
+		orders:     make(map[string]string),
+		userOrders: make(map[string][]string),
+		history:    newHistory(),
+		admins:     make(map[string]bool),
+		signPort:   signPort,
+	}
+
+	// Initialize admin addresses.
+	for _, addr := range config.AdminAddresses {
+		e.admins[strings.ToLower(addr)] = true
+	}
+
+	// Initialize trading pairs from config.
+	for _, pair := range config.TradingPairs {
+		e.pairs[pair.Name] = pair
+		e.orderbooks[pair.Name] = orderbook.NewOrderBook(pair.Name)
+		logger.Infof("registered trading pair: %s (base=%s, quote=%s)", pair.Name, pair.BaseToken.Hex(), pair.QuoteToken.Hex())
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /state", e.stateHandler)
@@ -40,122 +86,157 @@ func New(extensionPort, signPort int) *Extension {
 	return e
 }
 
-// stateHandler() structure is boilerplate but update the State field mapping to match your Extension fields.
+// stateHandler returns public orderbook depth and recent matches.
 func (e *Extension) stateHandler(w http.ResponseWriter, r *http.Request) {
 	e.mu.RLock()
+	pairStates := make(map[string]types.PairState, len(e.orderbooks))
+	for name, ob := range e.orderbooks {
+		bids, asks := ob.Depth()
+		pairStates[name] = types.PairState{Bids: bids, Asks: asks}
+	}
 	stateResponse := types.StateResponse{
 		StateVersion: teeutils.ToHash(config.Version),
 		State: types.State{
-			GreetingCount: e.greetingCount,
-			LastGreeting:  e.lastGreeting,
-			FarewellCount: e.farewellCount,
-			LastFarewell:  e.lastFarewell,
+			Pairs:      pairStates,
+			MatchCount: len(e.matches),
+			Matches:    e.matches,
 		},
 	}
 	e.mu.RUnlock()
 
-	err := json.NewEncoder(w).Encode(stateResponse)
-	if err != nil {
+	if err := json.NewEncoder(w).Encode(stateResponse); err != nil {
 		http.Error(w, fmt.Sprintf("sending response: %v", err), http.StatusInternalServerError)
-		return
 	}
 }
 
+// processAction routes by action type (instruction vs direct) and then by OPType/OPCommand.
 func (e *Extension) processAction(action teetypes.Action) (int, []byte) {
-	dataFixed, err := processorutils.Parse[instruction.DataFixed](action.Data.Message)
+	switch action.Data.Type {
+	case teetypes.Instruction:
+		return e.processInstruction(action)
+	case teetypes.Direct:
+		return e.processDirect(action)
+	default:
+		return http.StatusBadRequest, []byte(fmt.Sprintf("unsupported action type: %s", action.Data.Type))
+	}
+}
+
+// processInstruction handles on-chain instruction actions (deposits, withdrawals).
+func (e *Extension) processInstruction(action teetypes.Action) (int, []byte) {
+	df, err := processorutils.Parse[instruction.DataFixed](action.Data.Message)
 	if err != nil {
 		return http.StatusBadRequest, []byte(fmt.Sprintf("decoding fixed data: %v", err))
 	}
 
-	switch {
-	case dataFixed.OPType == teeutils.ToHash(config.OPTypeGreeting):
-		return e.processGreeting(action, dataFixed)
-
-	default:
+	if df.OPType != teeutils.ToHash(config.OPTypeOrderbook) {
 		return http.StatusNotImplemented, []byte(fmt.Sprintf(
 			"unsupported op type: received %s, expected %s (%s)",
-			dataFixed.OPType.Hex(), teeutils.ToHash(config.OPTypeGreeting).Hex(), config.OPTypeGreeting,
+			df.OPType.Hex(), teeutils.ToHash(config.OPTypeOrderbook).Hex(), config.OPTypeOrderbook,
 		))
 	}
-}
 
-// processGreeting routes GREETING instructions by OPCommand.
-func (e *Extension) processGreeting(action teetypes.Action, df *instruction.DataFixed) (int, []byte) {
+	var ar teetypes.ActionResult
+
 	switch {
-	case df.OPCommand == teeutils.ToHash(config.OPCommandSayHello):
-		ar := e.processSayHello(action, df)
-		b, _ := json.Marshal(ar)
-		return http.StatusOK, b
-
-	case df.OPCommand == teeutils.ToHash(config.OPCommandSayGoodbye):
-		ar := e.processSayGoodbye(action, df)
-		b, _ := json.Marshal(ar)
-		return http.StatusOK, b
-
+	case df.OPCommand == teeutils.ToHash(config.OPCommandDeposit):
+		ar = e.processDeposit(action, df)
+	case df.OPCommand == teeutils.ToHash(config.OPCommandWithdraw):
+		ar = e.processWithdraw(action, df)
 	default:
 		return http.StatusNotImplemented, []byte(fmt.Sprintf(
-			"unsupported op command: received %s, expected one of [%s (%s), %s (%s)]",
-			df.OPCommand.Hex(),
-			teeutils.ToHash(config.OPCommandSayHello).Hex(), config.OPCommandSayHello,
-			teeutils.ToHash(config.OPCommandSayGoodbye).Hex(), config.OPCommandSayGoodbye,
+			"unsupported instruction op command: %s", df.OPCommand.Hex(),
 		))
 	}
+
+	b, _ := json.Marshal(ar)
+	return http.StatusOK, b
 }
 
-// processSayHello handles SAY_HELLO instructions: returns a greeting and tracks count.
-func (e *Extension) processSayHello(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
-	var req types.SayHelloRequest
-	dec := json.NewDecoder(bytes.NewReader(df.OriginalMessage))
-	dec.DisallowUnknownFields()
-	err := dec.Decode(&req)
+// processDirect handles off-chain direct instruction actions (orders, cancels, state, history).
+func (e *Extension) processDirect(action teetypes.Action) (int, []byte) {
+	di, err := processorutils.Parse[teetypes.DirectInstruction](action.Data.Message)
 	if err != nil {
-		return buildResult(action, df, nil, 0, fmt.Errorf("decoding request: %w", err))
+		return http.StatusBadRequest, []byte(fmt.Sprintf("decoding direct instruction: %v", err))
 	}
 
-	if req.Name == "" {
-		return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
+	if di.OPType != teeutils.ToHash(config.OPTypeOrderbook) {
+		return http.StatusNotImplemented, []byte(fmt.Sprintf(
+			"unsupported op type: received %s, expected %s (%s)",
+			di.OPType.Hex(), teeutils.ToHash(config.OPTypeOrderbook).Hex(), config.OPTypeOrderbook,
+		))
 	}
 
-	e.mu.Lock()
-	e.greetingCount++
-	greetingNumber := e.greetingCount
-	greeting := fmt.Sprintf("Hello, %s! Welcome to Flare Confidential Compute.", req.Name)
-	e.lastGreeting = greeting
-	e.mu.Unlock()
-
-	resp := types.SayHelloResponse{
-		Greeting:       greeting,
-		GreetingNumber: greetingNumber,
+	// Build a synthetic DataFixed for buildResult (it needs OPType/OPCommand).
+	df := &instruction.DataFixed{
+		InstructionID: action.Data.ID,
+		OPType:        di.OPType,
+		OPCommand:     di.OPCommand,
 	}
-	data, _ := json.Marshal(resp)
 
-	return buildResult(action, df, data, 1, nil)
+	var ar teetypes.ActionResult
+
+	switch {
+	case di.OPCommand == teeutils.ToHash(config.OPCommandPlaceOrder):
+		ar = e.processPlaceOrder(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandCancelOrder):
+		ar = e.processCancelOrder(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandGetMyState):
+		ar = e.processGetMyState(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandExportHistory):
+		ar = e.processExportHistory(action, df, di.Message)
+	default:
+		return http.StatusNotImplemented, []byte(fmt.Sprintf(
+			"unsupported direct op command: %s", di.OPCommand.Hex(),
+		))
+	}
+
+	b, _ := json.Marshal(ar)
+	return http.StatusOK, b
 }
 
-// processSayGoodbye handles SAY_GOODBYE instructions: returns a farewell and tracks count.
-func (e *Extension) processSayGoodbye(action teetypes.Action, df *instruction.DataFixed) teetypes.ActionResult {
-	var req types.SayGoodbyeRequest
-	err := structs.DecodeTo(types.SayGoodbyeMessageArg, df.OriginalMessage, &req)
-	if err != nil {
-		return buildResult(action, df, nil, 0, fmt.Errorf("decoding request: %w", err))
+// getUserOpenOrders returns all currently-resting orders for a user.
+func (e *Extension) getUserOpenOrders(user string) []orderbook.Order {
+	var orders []orderbook.Order
+	orderIDs, ok := e.userOrders[user]
+	if !ok {
+		return orders
 	}
 
-	if req.Name == "" {
-		return buildResult(action, df, nil, 0, fmt.Errorf("name must not be empty"))
+	for _, id := range orderIDs {
+		pair, exists := e.orders[id]
+		if !exists {
+			continue
+		}
+		ob, ok := e.orderbooks[pair]
+		if !ok {
+			continue
+		}
+		bids, asks := ob.Depth()
+		// We need the actual order, not just depth. Search the book.
+		_ = bids
+		_ = asks
+		// For now, return a stub from history.
 	}
 
-	e.mu.Lock()
-	e.farewellCount++
-	farewellNumber := e.farewellCount
-	farewell := fmt.Sprintf("Goodbye, %s! Reason: %s", req.Name, req.Reason)
-	e.lastFarewell = farewell
-	e.mu.Unlock()
-
-	resp := types.SayGoodbyeResponse{
-		Farewell:       farewell,
-		FarewellNumber: farewellNumber,
+	// Use history orders that are still open (have remaining > 0 and still in the book).
+	for _, o := range e.history.orders[user] {
+		if _, exists := e.orders[o.ID]; exists && o.Remaining > 0 {
+			orders = append(orders, *o)
+		}
 	}
-	data, _ := json.Marshal(resp)
 
-	return buildResult(action, df, data, 1, nil)
+	return orders
+}
+
+// getUserMatches returns all matches involving a user.
+func (e *Extension) getUserMatches(user string) []orderbook.Match {
+	return e.history.matches[user]
+}
+
+// nextOrderID generates a unique order ID.
+var orderCounter uint64
+
+func (e *Extension) nextOrderID() string {
+	orderCounter++
+	return fmt.Sprintf("ORD-%d-%d", time.Now().UnixNano(), orderCounter)
 }

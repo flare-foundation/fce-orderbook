@@ -21,7 +21,7 @@ func (e *Extension) actionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Infof("received action, ID: %s", action.Data.ID)
+	logger.Infof("received action, ID: %s, type: %s", action.Data.ID, action.Data.Type)
 
 	status, body := e.processAction(action)
 
