@@ -18,6 +18,7 @@ services:
       - ./config/proxy/extension_proxy.docker.toml:/app/config/config.toml:ro
     environment:
       - PROXY_PRIVATE_KEY=${PROXY_PRIVATE_KEY:-983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}
+      - DIRECT_API_KEY=${DIRECT_API_KEY:-test-api-key-change-me}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -36,7 +37,9 @@ services:
   extension-tee:
     build:
       context: ../..
-      dockerfile: extension-examples/extension-scaffold/Dockerfile
+      dockerfile: extension-examples/orderbook/Dockerfile
+    volumes:
+      - ./config/pairs.json:/app/config/pairs.json:ro
     env_file:
       - path: ./config/extension.env
         required: false
@@ -55,7 +58,7 @@ services:
   types-server:
     build:
       context: ../..
-      dockerfile: extension-examples/extension-scaffold/Dockerfile
+      dockerfile: extension-examples/orderbook/Dockerfile
     command: ["./types-server"]
     environment:
       - TYPES_SERVER_PORT=8100

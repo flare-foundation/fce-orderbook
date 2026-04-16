@@ -5,9 +5,9 @@ RUN apk add --no-cache git
 WORKDIR /build
 
 COPY tee-node/ ./tee-node/
-COPY extension-examples/extension-scaffold/ ./extension-examples/extension-scaffold/
+COPY extension-examples/orderbook/ ./extension-examples/orderbook/
 
-WORKDIR /build/extension-examples/extension-scaffold
+WORKDIR /build/extension-examples/orderbook
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/extension-tee ./cmd/docker
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/types-server ./cmd/types-server

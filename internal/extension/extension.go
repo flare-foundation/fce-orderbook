@@ -182,6 +182,8 @@ func (e *Extension) processDirect(action teetypes.Action) (int, []byte) {
 		ar = e.processCancelOrder(action, df, di.Message)
 	case di.OPCommand == teeutils.ToHash(config.OPCommandGetMyState):
 		ar = e.processGetMyState(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandGetBookState):
+		ar = e.processGetBookState(action, df, di.Message)
 	case di.OPCommand == teeutils.ToHash(config.OPCommandExportHistory):
 		ar = e.processExportHistory(action, df, di.Message)
 	default:

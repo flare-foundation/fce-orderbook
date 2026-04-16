@@ -83,6 +83,14 @@ type GetMyStateResponse struct {
 	Matches    []orderbook.Match                       `json:"matches"`
 }
 
+// --- Get Book State (direct instruction) ---
+// Public orderbook depth + recent matches. Same payload shape as GET /state,
+// but routed through the TEE proxy's /direct path so external clients can query it.
+
+type GetBookStateRequest struct {
+	Sender string `json:"sender,omitempty"`
+}
+
 // --- Export History (direct instruction) ---
 
 type ExportHistoryRequest struct {

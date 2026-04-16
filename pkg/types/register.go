@@ -54,6 +54,16 @@ func RegisterDecoders(r *decoder.Registry) {
 		decoder.NewJSONDecoder[GetMyStateResponse](),
 	)
 
+	// GET_BOOK_STATE (request + result — response reuses StateResponse)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_BOOK_STATE", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[GetBookStateRequest](),
+	)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_BOOK_STATE", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[StateResponse](),
+	)
+
 	// EXPORT_HISTORY message + result
 	r.Register(
 		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "EXPORT_HISTORY", Kind: decoder.KindMessage},

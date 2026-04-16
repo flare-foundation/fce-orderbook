@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	"github.com/flare-foundation/go-flare-common/pkg/tee/instruction"
 	teetypes "github.com/flare-foundation/tee-node/pkg/types"
@@ -39,12 +38,14 @@ func (e *Extension) processWithdraw(action teetypes.Action, df *instruction.Data
 		return buildResult(action, df, nil, 0, fmt.Errorf("debiting balance: %w", err))
 	}
 
-	// Build the withdrawal hash: keccak256(abi.encodePacked(token, amount, to, withdrawalId))
+	// Build the withdrawal message: abi.encodePacked(token, amount, to, withdrawalId).
+	// We send the RAW packed bytes (not keccak256'd) because the TEE sign server
+	// applies keccak256 + EIP-191 prefix internally; see signWithTEE below.
 	withdrawalID := df.InstructionID
-	packed := packWithdrawalParams(token, amount, to, withdrawalID)
+	message := packWithdrawalMessage(token, amount, to, withdrawalID)
 
 	// Sign via TEE sign server.
-	sig, err := e.signWithTEE(packed)
+	sig, err := e.signWithTEE(message)
 	if err != nil {
 		// Rollback: re-credit balance on signing failure.
 		_ = e.balances.Deposit(user, token, amount)
@@ -75,8 +76,11 @@ func (e *Extension) processWithdraw(action teetypes.Action, df *instruction.Data
 	return buildResult(action, df, data, 1, nil)
 }
 
-// packWithdrawalParams creates keccak256(abi.encodePacked(token, amount, to, withdrawalId)).
-func packWithdrawalParams(token common.Address, amount uint64, to common.Address, withdrawalID common.Hash) []byte {
+// packWithdrawalMessage returns abi.encodePacked(token, amount, to, withdrawalId)
+// as raw bytes (104 bytes total). The TEE sign server keccak256's this input
+// and signs EIP-191-prefixed digest of the result, which matches the contract's
+// _recoverSigner expectation.
+func packWithdrawalMessage(token common.Address, amount uint64, to common.Address, withdrawalID common.Hash) []byte {
 	// abi.encodePacked: address(20) + uint256(32) + address(20) + bytes32(32)
 	buf := make([]byte, 0, 104)
 	buf = append(buf, token.Bytes()...)
@@ -88,7 +92,7 @@ func packWithdrawalParams(token common.Address, amount uint64, to common.Address
 	buf = append(buf, to.Bytes()...)
 	buf = append(buf, withdrawalID.Bytes()...)
 
-	return crypto.Keccak256(buf)
+	return buf
 }
 
 // signWithTEE sends a message to the TEE sign server and returns the signature.
