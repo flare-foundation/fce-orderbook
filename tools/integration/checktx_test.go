@@ -8,10 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"extension-scaffold/tools/pkg/contracts/helloworld"
+	"extension-scaffold/tools/pkg/contracts/orderbook"
 	"extension-scaffold/tools/pkg/support"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // --- 2.4: CheckTx Revert Reason Chain ---
@@ -26,7 +28,7 @@ func TestCheckTx_SuccessfulTx(t *testing.T) {
 		t.Fatalf("transactor: %v", err)
 	}
 
-	_, tx, _, err := helloworld.DeployHelloWorldInstructionSender(
+	_, tx, _, err := orderbook.DeployOrderbookInstructionSender(
 		opts, testSupport.ChainClient,
 		testSupport.Addresses.FlareTeeManager,
 		testSupport.Addresses.FlareTeeManager,

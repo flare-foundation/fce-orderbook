@@ -3,27 +3,28 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"context"
+	"math/big"
 	"strings"
 	"time"
 
 	"extension-scaffold/tools/pkg/configs"
+	"extension-scaffold/tools/pkg/contracts/orderbook"
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/support"
 	instrutils "extension-scaffold/tools/pkg/utils"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	"github.com/pkg/errors"
 )
 
-type SayHelloResponse struct {
-	Greeting       string `json:"greeting"`
-	GreetingNumber int    `json:"greetingNumber"`
-}
-
-type SayGoodbyeResponse struct {
-	Farewell       string `json:"farewell"`
-	FarewellNumber int    `json:"farewellNumber"`
+type DepositResponse struct {
+	Token     string `json:"token"`
+	Amount    uint64 `json:"amount"`
+	Available uint64 `json:"available"`
 }
 
 func main() {
@@ -31,9 +32,12 @@ func main() {
 	cf := flag.String("c", configs.ChainNodeURL, "chain node url")
 	pf := flag.String("p", configs.ExtensionProxyURL, "extension proxy url")
 	instructionSenderF := flag.String("instructionSender", "", "instructionSender address")
+	tokenF := flag.String("token", "", "ERC20 token address for deposit test")
+	amountF := flag.Int64("amount", 1000, "deposit amount")
 	flag.Parse()
 
 	instructionSenderAddress := common.HexToAddress(*instructionSenderF)
+	tokenAddress := common.HexToAddress(*tokenF)
 
 	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
@@ -53,17 +57,26 @@ func main() {
 		}
 	}
 
-	// --- Test case 1: Send a SAY_HELLO instruction ---
-	logger.Infof("Sending SAY_HELLO instruction...")
-
-	payload, err := json.Marshal(map[string]interface{}{
-		"name": "World",
-	})
+	// --- Allow the deployer to deposit ---
+	logger.Infof("Allowing deployer to deposit...")
+	err = allowUser(testSupport, instructionSenderAddress)
 	if err != nil {
-		fccutils.FatalWithCause(err)
+		// May already be allowed (admins are allowed at deploy time).
+		logger.Infof("allowUser note: %s (may already be allowed)", err)
 	}
 
-	instructionId, _, err := instrutils.SendSayHello(testSupport, instructionSenderAddress, payload)
+	// --- Test case: Send a DEPOSIT instruction ---
+	if *tokenF == "" {
+		logger.Infof("No --token specified, skipping deposit test")
+		logger.Infof("Usage: --token <ERC20_ADDRESS> --amount <AMOUNT>")
+		logger.Infof("Note: Deployer must have approved the instruction sender contract to spend tokens.")
+		return
+	}
+
+	logger.Infof("Sending DEPOSIT instruction (token=%s, amount=%d)...", tokenAddress.Hex(), *amountF)
+
+	amount := big.NewInt(*amountF)
+	instructionId, _, err := instrutils.Deposit(testSupport, instructionSenderAddress, tokenAddress, amount)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
@@ -71,33 +84,44 @@ func main() {
 
 	time.Sleep(5 * time.Second)
 
-	err = verifyHelloResult(*pf, instructionId)
+	err = verifyDepositResult(*pf, instructionId)
 	if err != nil {
 		fccutils.FatalWithCause(err)
 	}
-	logger.Infof("Test passed: SAY_HELLO instruction processed successfully")
-
-	// --- Test case 2: Send a SAY_GOODBYE instruction ---
-	logger.Infof("Sending SAY_GOODBYE instruction...")
-
-	goodbyeInstructionId, _, err := instrutils.SendSayGoodbye(testSupport, instructionSenderAddress, "World", "heading out")
-	if err != nil {
-		fccutils.FatalWithCause(err)
-	}
-	logger.Infof("Instruction sent. ID: %s", goodbyeInstructionId.Hex())
-
-	time.Sleep(5 * time.Second)
-
-	err = verifyGoodbyeResult(*pf, goodbyeInstructionId)
-	if err != nil {
-		fccutils.FatalWithCause(err)
-	}
-	logger.Infof("Test passed: SAY_GOODBYE instruction processed successfully")
+	logger.Infof("Test passed: DEPOSIT instruction processed successfully")
 
 	logger.Infof("All tests passed.")
 }
 
-func verifyHelloResult(proxyURL string, instructionId common.Hash) error {
+func allowUser(s *support.Support, instructionSenderAddress common.Address) error {
+	sender, err := orderbook.NewOrderbookInstructionSender(instructionSenderAddress, s.ChainClient)
+	if err != nil {
+		return errors.Errorf("failed to bind contract: %s", err)
+	}
+
+	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
+	if err != nil {
+		return errors.Errorf("failed to create transactor: %s", err)
+	}
+
+	deployer := crypto.PubkeyToAddress(s.Prv.PublicKey)
+	tx, err := sender.AllowUser(opts, deployer)
+	if err != nil {
+		return errors.Errorf("failed to call allowUser: %s", err)
+	}
+
+	receipt, err := bind.WaitMined(context.Background(), s.ChainClient, tx)
+	if err != nil {
+		return errors.Errorf("allowUser tx not mined: %s", err)
+	}
+	if receipt.Status != 1 {
+		return errors.New("allowUser transaction failed")
+	}
+
+	return nil
+}
+
+func verifyDepositResult(proxyURL string, instructionId common.Hash) error {
 	// --- Generic: poll proxy for result (do not modify) ---
 	actionResponse, err := fccutils.ActionResult(proxyURL, instructionId)
 	if err != nil {
@@ -116,53 +140,14 @@ func verifyHelloResult(proxyURL string, instructionId common.Hash) error {
 		return errors.New("expected response data but got none")
 	}
 
-	var resp SayHelloResponse
+	var resp DepositResponse
 	err = json.Unmarshal(actionResult.Data, &resp)
 	if err != nil {
 		return errors.Errorf("failed to unmarshal response: %s", err)
 	}
 
-	if resp.Greeting == "" {
-		return errors.New("expected non-empty Greeting")
-	}
-	if resp.GreetingNumber < 1 {
-		return errors.Errorf("expected GreetingNumber >= 1, got %d", resp.GreetingNumber)
-	}
-
-	logger.Infof("Response data: %+v", resp)
-
-	return nil
-}
-
-func verifyGoodbyeResult(proxyURL string, instructionId common.Hash) error {
-	actionResponse, err := fccutils.ActionResult(proxyURL, instructionId)
-	if err != nil {
-		return err
-	}
-	actionResult := actionResponse.Result
-
-	if actionResult.Status == 0 {
-		return errors.Errorf("instruction processing failed: %s", actionResult.Log)
-	}
-	if actionResult.Status == 2 {
-		return errors.New("instruction still pending after polling, expected completed")
-	}
-
-	if len(actionResult.Data) == 0 {
-		return errors.New("expected response data but got none")
-	}
-
-	var resp SayGoodbyeResponse
-	err = json.Unmarshal(actionResult.Data, &resp)
-	if err != nil {
-		return errors.Errorf("failed to unmarshal response: %s", err)
-	}
-
-	if resp.Farewell == "" {
-		return errors.New("expected non-empty Farewell")
-	}
-	if resp.FarewellNumber < 1 {
-		return errors.Errorf("expected FarewellNumber >= 1, got %d", resp.FarewellNumber)
+	if resp.Amount == 0 {
+		return errors.New("expected non-zero deposit amount in response")
 	}
 
 	logger.Infof("Response data: %+v", resp)
