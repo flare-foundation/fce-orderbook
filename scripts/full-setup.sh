@@ -98,7 +98,7 @@ echo -e "${CYAN}║  Phase 1: Pre-build                  ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
 "$SCRIPT_DIR/pre-build.sh" || die "Pre-build failed"
 
-# --- Phase 1.5: Extension setup (optional hook for extension-specific config) ---
+# --- Phase 1.5: Extension setup (deploy tokens, write config) ---
 if [[ -x "$SCRIPT_DIR/extension-setup.sh" ]]; then
     echo -e "\n${CYAN}╔══════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║  Phase 1.5: Extension setup          ║${NC}"

@@ -31,3 +31,7 @@ cycle_queue_response_wait = "2s"
 [voting]
 proposal_expiration = "12s"
 max_pending_request = 10000
+
+[direct]
+enable = true
+api_key_variable = "DIRECT_API_KEY"

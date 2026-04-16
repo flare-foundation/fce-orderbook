@@ -3,50 +3,96 @@
 #
 # This hook runs between pre-build (contract deployment) and docker-up (starting
 # the TEE). Use it for any setup whose output the extension needs at startup —
-# for example:
-#   - Deploying auxiliary contracts (ERC20 tokens, oracles, vaults)
-#   - Writing config files the extension reads at init (pairs, feeds, pools)
-#   - Minting test tokens, setting allowances, seeding initial state
+# e.g. deploying auxiliary contracts, writing config files the extension reads.
 #
-# The following variables are available (sourced from .env + config/extension.env):
+# For the orderbook this:
+#   1. Allows the deployer to deposit (KYC allowlist)
+#   2. Deploys two TestToken contracts (TUSDT + TFLR)
+#   3. Updates config/pairs.json with the deployed token addresses
+#   4. Mints tokens to the deployer
+#   5. Approves InstructionSender to spend tokens
+#   6. Writes config/test-tokens.env
 #
-#   INSTRUCTION_SENDER   — your deployed InstructionSender contract address
-#   EXTENSION_ID         — your extension's ID on the TeeExtensionRegistry
-#   CHAIN_URL            — chain RPC endpoint
+# Why this must run before Docker:
+#   The extension reads config/pairs.json at startup. If tokens are deployed
+#   after the container starts, the extension won't know about them.
+#
+# Inputs (env vars, typically sourced from .env + config/extension.env):
 #   ADDRESSES_FILE       — path to deployed-addresses.json
-#   DEPLOYMENT_PRIVATE_KEY — funded deployer key
-#
-# Example: deploy a helper contract and write its address to a config file
-#
-#   cd "$PROJECT_DIR/tools"
-#   HELPER_ADDR=$(go run ./cmd/deploy-helper -a "$ADDRESSES_FILE" -c "$CHAIN_URL")
-#   echo "HELPER_CONTRACT=$HELPER_ADDR" > "$PROJECT_DIR/config/helper.env"
-#
-# Why this matters:
-#   The extension container reads config at startup. Anything it needs must be
-#   written to disk BEFORE `docker compose up`. If you deploy contracts after
-#   the container starts, you'll need to restart it — this hook prevents that.
+#   CHAIN_URL            — chain RPC URL
+#   INSTRUCTION_SENDER   — InstructionSender contract address (from pre-build)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-GREEN='\033[0;32m'; NC='\033[0m'
-log() { echo -e "${GREEN}[extension-setup]${NC} $*"; }
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
+log()  { echo -e "${GREEN}[extension-setup]${NC} $*"; }
+die()  { echo -e "${RED}[extension-setup] ERROR:${NC} $*" >&2; exit 1; }
 
 # --- Load environment ---
 if [[ -f "$PROJECT_DIR/.env" ]]; then
     set -a; source "$PROJECT_DIR/.env"; set +a
 fi
-if [[ -f "$PROJECT_DIR/config/extension.env" ]]; then
-    source "$PROJECT_DIR/config/extension.env"
+
+CONFIG_FILE="$PROJECT_DIR/config/extension.env"
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+    log "Loaded config from $CONFIG_FILE"
+else
+    die "config/extension.env not found — run pre-build.sh first"
 fi
 
-log "EXTENSION_ID:       ${EXTENSION_ID:-<not set>}"
-log "INSTRUCTION_SENDER: ${INSTRUCTION_SENDER:-<not set>}"
-log "CHAIN_URL:          ${CHAIN_URL:-<not set>}"
+CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
+INSTRUCTION_SENDER="${INSTRUCTION_SENDER:-}"
+ADDRESSES_FILE="${ADDRESSES_FILE:-}"
 
-# --- Add your extension-specific setup below ---
-# The Hello World scaffold has no extra setup. Replace this with your own logic.
+[[ -n "$INSTRUCTION_SENDER" ]] || die "INSTRUCTION_SENDER not set. Run pre-build.sh first."
 
-log "No extension-specific setup needed (Hello World scaffold)."
+# Resolve relative paths against PROJECT_DIR
+if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
+fi
+
+# Auto-detect addresses file if not set
+if [[ -z "$ADDRESSES_FILE" ]]; then
+    LOCAL_MODE="${LOCAL_MODE:-true}"
+    if [[ "$LOCAL_MODE" != "true" ]]; then
+        candidate="$PROJECT_DIR/config/coston2/deployed-addresses.json"
+        if [[ -f "$candidate" ]]; then
+            ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+        fi
+    fi
+    if [[ -z "$ADDRESSES_FILE" ]]; then
+        for candidate in \
+            "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json"; do
+            if [[ -f "$candidate" ]]; then
+                ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+                break
+            fi
+        done
+    fi
+    [[ -n "$ADDRESSES_FILE" ]] || die "Cannot find deployed-addresses.json. Set ADDRESSES_FILE."
+fi
+
+# Resolve to absolute path
+if [[ "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$(cd "$(dirname "$ADDRESSES_FILE")" && pwd)/$(basename "$ADDRESSES_FILE")"
+fi
+
+log "Chain URL:          $CHAIN_URL"
+log "InstructionSender:  $INSTRUCTION_SENDER"
+log "Addresses file:     $ADDRESSES_FILE"
+
+# --- Run extension setup ---
+cd "$PROJECT_DIR/tools"
+go run ./cmd/test-setup \
+    -a "$ADDRESSES_FILE" \
+    -c "$CHAIN_URL" \
+    -instructionSender "$INSTRUCTION_SENDER" \
+    || die "Extension setup failed"
+
+log ""
+log "Extension setup complete. config/pairs.json and config/test-tokens.env written."
+log "Docker Compose will pick up the correct config on startup."

@@ -1,61 +1,134 @@
 #!/usr/bin/env bash
-# extension-post-setup.sh — Extension-specific setup that runs AFTER post-build.
+# extension-post-setup.sh — Extension-specific setup that runs AFTER Docker Compose
+# and AFTER the TEE has been registered on-chain by post-build.sh.
 #
-# This hook runs once the TEE node is live and registered on-chain in
-# TeeMachineRegistry. Use it for setup that needs the TEE's on-chain identity
-# to already exist — things that couldn't be done in extension-setup.sh because
-# the TEE hadn't been registered yet.
+# This hook runs once the TEE node is live and registered in TeeMachineRegistry.
+# Use it for any setup that needs the TEE's on-chain identity to exist — things
+# you couldn't do in extension-setup.sh because the TEE didn't exist yet.
 #
-# Typical uses:
-#   - Reading the TEE signing address from TeeMachineRegistry.getActiveTeeMachines
-#     and writing it to a contract so withdrawal / authorization signatures can
-#     be verified on-chain via ecrecover.
-#   - Granting the registered TEE node any extension-specific on-chain roles.
-#   - Seeding on-chain state that depends on knowing which TEE is active.
+# For the orderbook this:
+#   1. Looks up the TEE node's signing address from TeeMachineRegistry
+#      (getActiveTeeMachines returns the registered TEE IDs for this extension)
+#   2. Calls setTeeAddress() on InstructionSender so executeWithdrawal can
+#      verify TEE-signed withdrawal authorizations via ecrecover.
 #
-# The following variables are available (sourced from .env + config/extension.env):
+# Without this, executeWithdrawal reverts with "TEE not configured".
 #
-#   INSTRUCTION_SENDER     — your deployed InstructionSender contract address
-#   EXTENSION_ID           — your extension's ID on the TeeExtensionRegistry
-#   CHAIN_URL              — chain RPC endpoint
-#   ADDRESSES_FILE         — path to deployed-addresses.json
-#   DEPLOYMENT_PRIVATE_KEY — funded deployer/admin key
-#
-# Example: read the TEE address and register it with your contract
-#
-#   TEE_MACHINE_REGISTRY="$(jq -r '.TeeMachineRegistry' "$ADDRESSES_FILE")"
-#   tee_addr=$(cast call "$TEE_MACHINE_REGISTRY" \
-#       "getActiveTeeMachines(uint256)(address[],string[])" "$EXTENSION_ID" \
-#       --rpc-url "$CHAIN_URL" | head -1 | tr -d '[]' | cut -d, -f1 | xargs)
-#   cast send "$INSTRUCTION_SENDER" "setTeeAddress(address)" "$tee_addr" \
-#       --rpc-url "$CHAIN_URL" --private-key "$DEPLOYMENT_PRIVATE_KEY"
-#
-# Why this matters:
-#   Some on-chain verification requires the TEE's signing address to be known
-#   to the contract. Since that address is only derivable after the TEE
-#   registers itself, the wiring has to happen here — not in extension-setup.sh.
+# Inputs (env vars, typically sourced from .env + config/extension.env):
+#   ADDRESSES_FILE          — path to deployed-addresses.json
+#   CHAIN_URL               — chain RPC URL
+#   INSTRUCTION_SENDER      — InstructionSender contract address (from pre-build)
+#   EXTENSION_ID            — extension id (from pre-build)
+#   DEPLOYMENT_PRIVATE_KEY  — admin key for setTeeAddress call
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-GREEN='\033[0;32m'; NC='\033[0m'
-log() { echo -e "${GREEN}[extension-post-setup]${NC} $*"; }
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
+log()  { echo -e "${GREEN}[extension-post-setup]${NC} $*"; }
+die()  { echo -e "${RED}[extension-post-setup] ERROR:${NC} $*" >&2; exit 1; }
 
 # --- Load environment ---
 if [[ -f "$PROJECT_DIR/.env" ]]; then
     set -a; source "$PROJECT_DIR/.env"; set +a
 fi
-if [[ -f "$PROJECT_DIR/config/extension.env" ]]; then
-    source "$PROJECT_DIR/config/extension.env"
+
+CONFIG_FILE="$PROJECT_DIR/config/extension.env"
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+    log "Loaded config from $CONFIG_FILE"
+else
+    die "config/extension.env not found — run pre-build.sh first"
 fi
 
-log "EXTENSION_ID:       ${EXTENSION_ID:-<not set>}"
-log "INSTRUCTION_SENDER: ${INSTRUCTION_SENDER:-<not set>}"
-log "CHAIN_URL:          ${CHAIN_URL:-<not set>}"
+CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
+INSTRUCTION_SENDER="${INSTRUCTION_SENDER:-}"
+EXTENSION_ID="${EXTENSION_ID:-}"
+ADDRESSES_FILE="${ADDRESSES_FILE:-}"
+DEPLOYMENT_PRIVATE_KEY="${DEPLOYMENT_PRIVATE_KEY:-}"
 
-# --- Add your extension-specific post-registration setup below ---
-# The Hello World scaffold has no post-registration setup. Replace this with
-# your own logic if your extension needs the TEE address on-chain.
+[[ -n "$INSTRUCTION_SENDER" ]]     || die "INSTRUCTION_SENDER not set. Run pre-build.sh first."
+[[ -n "$EXTENSION_ID" ]]           || die "EXTENSION_ID not set. Run pre-build.sh first."
+[[ -n "$DEPLOYMENT_PRIVATE_KEY" ]] || die "DEPLOYMENT_PRIVATE_KEY not set. Check .env."
 
-log "No extension-specific post-setup needed (Hello World scaffold)."
+# Resolve relative paths against PROJECT_DIR
+if [[ -n "$ADDRESSES_FILE" && "$ADDRESSES_FILE" != /* ]]; then
+    ADDRESSES_FILE="$PROJECT_DIR/$ADDRESSES_FILE"
+fi
+
+# Auto-detect addresses file (same logic as other scripts)
+if [[ -z "$ADDRESSES_FILE" ]]; then
+    LOCAL_MODE="${LOCAL_MODE:-true}"
+    if [[ "$LOCAL_MODE" != "true" ]]; then
+        candidate="$PROJECT_DIR/config/coston2/deployed-addresses.json"
+        if [[ -f "$candidate" ]]; then
+            ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+        fi
+    fi
+    if [[ -z "$ADDRESSES_FILE" ]]; then
+        for candidate in \
+            "$PROJECT_DIR/../../e2e/docker/sim_dump/deployed-addresses.json" \
+            "$PROJECT_DIR/../docker/sim_dump/deployed-addresses.json"; do
+            if [[ -f "$candidate" ]]; then
+                ADDRESSES_FILE="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+                break
+            fi
+        done
+    fi
+    [[ -n "$ADDRESSES_FILE" ]] || die "Cannot find deployed-addresses.json. Set ADDRESSES_FILE."
+fi
+
+[[ -f "$ADDRESSES_FILE" ]] || die "Addresses file not found: $ADDRESSES_FILE"
+command -v jq   >/dev/null || die "jq not found on PATH"
+command -v cast >/dev/null || die "cast (foundry) not found on PATH"
+
+TEE_MACHINE_REGISTRY="$(jq -r '.TeeMachineRegistry // empty' "$ADDRESSES_FILE")"
+[[ -n "$TEE_MACHINE_REGISTRY" ]] || die "TeeMachineRegistry not found in $ADDRESSES_FILE"
+
+log "Chain URL:           $CHAIN_URL"
+log "InstructionSender:   $INSTRUCTION_SENDER"
+log "TeeMachineRegistry:  $TEE_MACHINE_REGISTRY"
+log "Extension ID:        $EXTENSION_ID"
+
+# --- Idempotency: skip if already set ---
+already_set="$(cast call "$INSTRUCTION_SENDER" "teeAddressSet()(bool)" --rpc-url "$CHAIN_URL" 2>/dev/null || echo "")"
+if [[ "$already_set" == "true" ]]; then
+    current="$(cast call "$INSTRUCTION_SENDER" "teeAddress()(address)" --rpc-url "$CHAIN_URL")"
+    log "TEE address already set on InstructionSender ($current) — nothing to do"
+    exit 0
+fi
+
+# --- Look up TEE signing address from TeeMachineRegistry ---
+# getActiveTeeMachines returns (address[] teeIds, string[] urls). We take the
+# first entry — orderbook uses single-TEE signing (cosignersThreshold=0).
+log "Querying TeeMachineRegistry.getActiveTeeMachines($EXTENSION_ID)..."
+raw="$(cast call "$TEE_MACHINE_REGISTRY" \
+    "getActiveTeeMachines(uint256)(address[],string[])" \
+    "$EXTENSION_ID" --rpc-url "$CHAIN_URL")" || die "getActiveTeeMachines call reverted"
+
+# First line of output is the address array: "[0xabc..., 0xdef...]" or "[]"
+addrs_line="$(echo "$raw" | head -n1)"
+addrs_stripped="${addrs_line//[\[\]]/}"
+# Pick the first comma-separated entry, trim whitespace
+tee_addr="$(echo "$addrs_stripped" | cut -d, -f1 | xargs || true)"
+
+if [[ -z "$tee_addr" || "$tee_addr" == "0x0000000000000000000000000000000000000000" ]]; then
+    die "No active TEE machines registered for extension $EXTENSION_ID. Did post-build.sh complete?"
+fi
+
+# Count how many TEEs are active — warn if more than one, since we only wire one.
+num_addrs="$(echo "$addrs_stripped" | tr ',' '\n' | grep -c '0x' || true)"
+if [[ "$num_addrs" -gt 1 ]]; then
+    log "Note: $num_addrs active TEEs registered; using the first ($tee_addr)"
+fi
+
+log "TEE signing address: $tee_addr"
+
+# --- Set on InstructionSender ---
+log "Calling setTeeAddress($tee_addr) on $INSTRUCTION_SENDER..."
+cast send "$INSTRUCTION_SENDER" "setTeeAddress(address)" "$tee_addr" \
+    --rpc-url "$CHAIN_URL" --private-key "$DEPLOYMENT_PRIVATE_KEY" >/dev/null \
+    || die "setTeeAddress failed"
+
+log "TEE address set on InstructionSender — executeWithdrawal() is now enabled"

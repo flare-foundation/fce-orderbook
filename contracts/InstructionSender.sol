@@ -44,12 +44,16 @@ contract OrderbookInstructionSender {
     mapping(bytes32 => bool) public usedWithdrawalIds;
 
     modifier onlyAdmin() {
+        _checkAdmin();
+        _;
+    }
+
+    function _checkAdmin() internal view {
         bool isAdmin = false;
         for (uint256 i = 0; i < admins.length; i++) {
             if (admins[i] == msg.sender) { isAdmin = true; break; }
         }
         require(isAdmin, "not admin");
-        _;
     }
 
     constructor(
@@ -87,6 +91,7 @@ contract OrderbookInstructionSender {
 
     /// @notice Set the TEE node address (authorized withdrawal signer). Called once after TEE starts.
     function setTeeAddress(address _teeAddress) external onlyAdmin {
+        // TODO: Perhaps require a TEE AVAILABILITY CHECK here, not just an admin set.
         require(!teeAddressSet, "TEE address already set");
         require(_teeAddress != address(0), "zero address");
         teeAddress = _teeAddress;
@@ -113,7 +118,7 @@ contract OrderbookInstructionSender {
         require(allowed[msg.sender], "not allowed to deposit");
         require(amount > 0, "zero amount");
 
-        IERC20(token).transferFrom(msg.sender, address(this), amount);
+        require(IERC20(token).transferFrom(msg.sender, address(this), amount), "transferFrom failed");
 
         // ABI-encode sender address into the message so the TEE can identify the depositor.
         bytes memory message = abi.encode(msg.sender, token, amount);
@@ -153,7 +158,7 @@ contract OrderbookInstructionSender {
         require(signer != address(0) && signer == teeAddress, "invalid TEE signature");
 
         usedWithdrawalIds[withdrawalId] = true;
-        IERC20(token).transfer(to, amount);
+        require(IERC20(token).transfer(to, amount), "transfer failed");
     }
 
     // --- Internal ---
@@ -181,10 +186,12 @@ contract OrderbookInstructionSender {
     }
 
     function _recoverSigner(bytes32 hash, bytes memory signature) internal pure returns (address) {
-        // The TEE sign server computes keccak256 of the message we send, then signs it.
-        // So the hash we pass is already the message; the TEE signs keccak256(hash).
-        // To verify: ecrecover(keccak256(hash), v, r, s) should equal teeAddress.
-        bytes32 ethHash = keccak256(abi.encodePacked(hash));
+        // The TEE sign server, given `message`, signs EIP-191-prefixed keccak256(message).
+        // The extension sends abi.encodePacked(token, amount, to, withdrawalId) as the message,
+        // so keccak256(message) == `hash` here. The digest actually signed is therefore
+        //   keccak256("\x19Ethereum Signed Message:\n32" || hash)
+        // which is what we must recover against.
+        bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
         require(signature.length == 65, "invalid signature length");
 
         bytes32 r;

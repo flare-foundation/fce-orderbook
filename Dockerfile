@@ -30,13 +30,12 @@ RUN \
   : "Clean up for improving reproducibility (optional)" && \
   rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
-# bring in both modules; tee-node sits next to extension-scaffold so the replace directive resolves
+# bring in both modules; tee-node sits next to orderbook so the replace directive resolves
 # explicit chmod/chown on COPY so file metadata does not depend on host umask or ownership
 COPY --chmod=644 --chown=0:0 tee-node/ ./tee-node/
-COPY --chmod=644 --chown=0:0 extension-examples/extension-scaffold/ ./extension-examples/extension-scaffold/
+COPY --chmod=644 --chown=0:0 extension-examples/orderbook/ ./extension-examples/orderbook/
 
-WORKDIR /build/extension-examples/extension-scaffold
-
+WORKDIR /build/extension-examples/orderbook
 RUN go mod download
 RUN go mod verify
 
