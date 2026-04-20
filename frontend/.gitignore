@@ -4,3 +4,6 @@ dist
 src/config/generated.ts
 .env
 .env.local
+.playwright-mcp/
+*.png
+tsconfig.tsbuildinfo
