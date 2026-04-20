@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"extension-scaffold/internal/config"
 	"extension-scaffold/pkg/orderbook"
@@ -47,13 +48,14 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
 
 	// Build the order.
 	order := &orderbook.Order{
-		ID:       e.nextOrderID(),
-		Owner:    user,
-		Pair:     req.Pair,
-		Side:     req.Side,
-		Type:     req.Type,
-		Price:    req.Price,
-		Quantity: req.Quantity,
+		ID:        e.nextOrderID(),
+		Owner:     user,
+		Pair:      req.Pair,
+		Side:      req.Side,
+		Type:      req.Type,
+		Price:     req.Price,
+		Quantity:  req.Quantity,
+		Timestamp: time.Now().UnixNano(),
 	}
 
 	// Calculate hold amount and determine the hold token.
