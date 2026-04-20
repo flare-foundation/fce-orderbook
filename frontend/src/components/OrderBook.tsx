@@ -1,102 +1,142 @@
-import { formatUnits } from "viem";
-import type { PriceLevel } from "../lib/orderbook";
-import { formatPrice } from "../lib/price";
+import { useRef } from 'react';
+import { formatUnits } from 'viem';
+import { formatPrice } from '../lib/price';
 
-interface Props {
+interface PriceLevel {
+  price: number;
+  quantity: number;
+}
+
+interface OrderBookProps {
   bids: PriceLevel[];
   asks: PriceLevel[];
-  onPriceClick: (price: number) => void;
   baseDecimals?: number;
+  baseSymbol?: string;
+  quoteSymbol?: string;
+  onPriceClick: (price: number, side: 'buy' | 'sell') => void;
 }
 
-export function OrderBook({ bids, asks, onPriceClick, baseDecimals }: Props) {
-  const sortedAsks = [...asks].sort((a, b) => b.price - a.price);
-  const sortedBids = [...bids].sort((a, b) => b.price - a.price);
+const ROWS = 14;
 
-  const maxQty = Math.max(
-    ...sortedAsks.map((a) => a.quantity),
-    ...sortedBids.map((b) => b.quantity),
-    1
-  );
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="grid grid-cols-2 text-xs text-gray-500 px-3 py-1 border-b border-gray-800">
-        <span>Price</span>
-        <span className="text-right">Quantity</span>
-      </div>
-
-      {/* Asks (top, red) */}
-      <div className="flex-1 overflow-y-auto flex flex-col justify-end">
-        {sortedAsks.map((level, i) => (
-          <PriceLevelRow
-            key={`ask-${i}`}
-            level={level}
-            side="ask"
-            maxQty={maxQty}
-            baseDecimals={baseDecimals}
-            onClick={() => onPriceClick(formatPrice(level.price))}
-          />
-        ))}
-      </div>
-
-      {/* Spread indicator */}
-      <div className="px-3 py-1 text-xs text-gray-500 border-y border-gray-800 text-center">
-        {sortedAsks.length > 0 && sortedBids.length > 0
-          ? `Spread: ${formatPrice(sortedAsks[sortedAsks.length - 1].price - sortedBids[0].price)}`
-          : "No spread"}
-      </div>
-
-      {/* Bids (bottom, green) */}
-      <div className="flex-1 overflow-y-auto">
-        {sortedBids.map((level, i) => (
-          <PriceLevelRow
-            key={`bid-${i}`}
-            level={level}
-            side="bid"
-            maxQty={maxQty}
-            baseDecimals={baseDecimals}
-            onClick={() => onPriceClick(formatPrice(level.price))}
-          />
-        ))}
-      </div>
-    </div>
-  );
+function formatQty(raw: number, decimals?: number): string {
+  if (decimals === undefined) return String(raw);
+  return parseFloat(formatUnits(BigInt(Math.floor(raw)), decimals)).toFixed(4);
 }
 
-function PriceLevelRow({
-  level,
-  side,
-  maxQty,
+export function OrderBook({
+  bids,
+  asks,
   baseDecimals,
-  onClick,
-}: {
-  level: PriceLevel;
-  side: "bid" | "ask";
-  maxQty: number;
-  baseDecimals?: number;
-  onClick: () => void;
-}) {
-  const pct = (level.quantity / maxQty) * 100;
-  const color = side === "bid" ? "text-bid" : "text-ask";
-  const bg = side === "bid" ? "bg-green-500/10" : "bg-red-500/10";
+  baseSymbol,
+  quoteSymbol,
+  onPriceClick,
+}: OrderBookProps) {
+  // Best ask = lowest, best bid = highest. Keep a fixed row count per side.
+  const sortedAsks = [...asks].sort((a, b) => a.price - b.price).slice(0, ROWS);
+  const sortedBids = [...bids].sort((a, b) => b.price - a.price).slice(0, ROWS);
 
-  const displayQty =
-    baseDecimals !== undefined
-      ? formatUnits(BigInt(level.quantity), baseDecimals)
-      : level.quantity.toString();
+  // Cumulative sizes from the best price outward.
+  let cum = 0;
+  const askCum = sortedAsks.map(a => (cum += a.quantity));
+  cum = 0;
+  const bidCum = sortedBids.map(b => (cum += b.quantity));
+
+  const bidTotal = bidCum[bidCum.length - 1] ?? 0;
+  const askTotal = askCum[askCum.length - 1] ?? 0;
+  const maxCum = Math.max(bidTotal, askTotal, 1);
+
+  const bestBidRaw = sortedBids[0]?.price ?? 0;
+  const bestAskRaw = sortedAsks[0]?.price ?? 0;
+  const midRaw = bestBidRaw && bestAskRaw ? (bestBidRaw + bestAskRaw) / 2 : 0;
+  const mid = midRaw ? formatPrice(midRaw) : 0;
+  const spreadRaw = bestBidRaw && bestAskRaw ? bestAskRaw - bestBidRaw : 0;
+  const spread = spreadRaw ? formatPrice(spreadRaw) : 0;
+  const spreadBps = mid > 0 ? (spread / mid) * 10000 : 0;
+
+  const prevMidRef = useRef(mid);
+  const dirRef = useRef<'up' | 'dn'>('up');
+  if (mid !== prevMidRef.current) {
+    dirRef.current = mid >= prevMidRef.current ? 'up' : 'dn';
+    prevMidRef.current = mid;
+  }
+
+  const fmtPrice = (raw: number) => formatPrice(raw).toFixed(3);
+  const baseUnit = baseSymbol ? ` · ${baseSymbol}` : '';
+  const quoteUnit = quoteSymbol ? ` · ${quoteSymbol}` : '';
+
+  // Asks: display with largest total at top, best ask at bottom (near spread).
+  const askRows = sortedAsks.map((lvl, i) => ({ lvl, cum: askCum[i] })).reverse();
+
+  const bidShare = bidTotal + askTotal > 0 ? (bidTotal / (bidTotal + askTotal)) * 100 : 50;
 
   return (
-    <div
-      onClick={onClick}
-      className="relative grid grid-cols-2 px-3 py-0.5 text-xs cursor-pointer hover:bg-gray-800/50"
-    >
-      <div
-        className={`absolute inset-y-0 right-0 ${bg}`}
-        style={{ width: `${pct}%` }}
-      />
-      <span className={`relative ${color}`}>{formatPrice(level.price)}</span>
-      <span className="relative text-right text-gray-300">{displayQty}</span>
+    <div className="ob">
+      <div className="ob-head">
+        <span>PRICE{quoteUnit}</span>
+        <span>SIZE{baseUnit}</span>
+        <span>SUM{baseUnit}</span>
+      </div>
+
+      <div className="ob-side asks">
+        {askRows.map(({ lvl, cum }, i) => {
+          const humanPrice = formatPrice(lvl.price);
+          const pct = (cum / maxCum) * 100;
+          return (
+            <div
+              key={`a-${lvl.price}-${i}`}
+              className="ob-row ask"
+              onClick={() => onPriceClick(humanPrice, 'buy')}
+            >
+              <div className="bar" style={{ width: `${pct}%` }} />
+              <span className="price">{fmtPrice(lvl.price)}</span>
+              <span className="size">{formatQty(lvl.quantity, baseDecimals)}</span>
+              <span className="total">{formatQty(cum, baseDecimals)}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="ob-spread">
+        <span className={`ob-mid ${dirRef.current}`}>
+          {mid ? mid.toFixed(3) : '—'}
+        </span>
+        <span className="ob-spread-meta">
+          <span className="dim">SPREAD</span> {spread ? spread.toFixed(3) : '—'}
+          {spread > 0 && (
+            <> <span className="dim">/</span> {spreadBps.toFixed(1)} bps</>
+          )}
+        </span>
+      </div>
+
+      <div className="ob-side bids">
+        {sortedBids.map((lvl, i) => {
+          const humanPrice = formatPrice(lvl.price);
+          const pct = (bidCum[i] / maxCum) * 100;
+          return (
+            <div
+              key={`b-${lvl.price}-${i}`}
+              className="ob-row bid"
+              onClick={() => onPriceClick(humanPrice, 'sell')}
+            >
+              <div className="bar" style={{ width: `${pct}%` }} />
+              <span className="price">{fmtPrice(lvl.price)}</span>
+              <span className="size">{formatQty(lvl.quantity, baseDecimals)}</span>
+              <span className="total">{formatQty(bidCum[i], baseDecimals)}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="ob-foot">
+        <div className="ob-foot-bar">
+          <div className="ob-foot-bar-bid" style={{ width: `${bidShare}%` }} />
+          <div className="ob-foot-bar-ask" style={{ width: `${100 - bidShare}%` }} />
+        </div>
+        <div className="ob-foot-meta">
+          <span><span className="dim">B</span> {formatQty(bidTotal, baseDecimals)}</span>
+          <span><span className="dim">A</span> {formatQty(askTotal, baseDecimals)}</span>
+        </div>
+      </div>
     </div>
   );
 }

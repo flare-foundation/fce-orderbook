@@ -9,7 +9,7 @@ import { ToastProvider } from "./components/ui/Toast";
 import { Trade } from "./pages/Trade";
 
 const config = getDefaultConfig({
-  appName: "Orderbook",
+  appName: "LEDGER",
   projectId: env.walletConnectProjectId || "placeholder-project-id",
   chains: [coston2],
 });
@@ -20,7 +20,7 @@ export default function App() {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()}>
+        <RainbowKitProvider theme={darkTheme({ accentColor: '#c96aa8', accentColorForeground: '#0a0a0a', borderRadius: 'none', fontStack: 'system' })}>
           <ToastProvider>
             <Trade />
           </ToastProvider>

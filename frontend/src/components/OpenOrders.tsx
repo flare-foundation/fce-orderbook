@@ -1,11 +1,10 @@
-import { formatUnits } from "viem";
-import { useMyState } from "../hooks/useMyState";
-import { useCancelOrder } from "../hooks/useCancelOrder";
-import { useWalletBalances } from "../hooks/useWalletBalances";
-import { Button } from "./ui/Button";
-import { useToast } from "./ui/Toast";
-import { PAIRS } from "../config/generated";
-import { formatPrice } from "../lib/price";
+import { formatUnits } from 'viem';
+import { useMyState } from '../hooks/useMyState';
+import { useCancelOrder } from '../hooks/useCancelOrder';
+import { useWalletBalances } from '../hooks/useWalletBalances';
+import { useToast } from './ui/Toast';
+import { PAIRS } from '../config/generated';
+import { formatPrice } from '../lib/price';
 
 export function OpenOrders() {
   const { openOrders } = useMyState();
@@ -13,75 +12,90 @@ export function OpenOrders() {
   const { tokenInfo } = useWalletBalances();
   const { toast } = useToast();
 
-  const handleCancel = async (orderId: string) => {
+  function getBaseDecimals(pair: string): number | undefined {
+    const pairConfig = PAIRS.find(p => p.name === pair);
+    if (!pairConfig) return undefined;
+    return tokenInfo[pairConfig.baseToken.toLowerCase()]?.decimals;
+  }
+
+  function fmtRemaining(remaining: number, pair: string): string {
+    const dec = getBaseDecimals(pair);
+    if (dec === undefined) return String(remaining);
+    return parseFloat(formatUnits(BigInt(Math.floor(remaining)), dec)).toFixed(4);
+  }
+
+  function fmtTime(ts?: number): string {
+    if (!ts || ts <= 0) return '—';
+    // timestamp may be unix seconds, ms, or ns — normalize to ms
+    const ms = ts > 1e15 ? Math.floor(ts / 1e6) : ts > 1e12 ? ts : ts * 1000;
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleTimeString('en-GB', { hour12: false });
+  }
+
+  async function handleCancel(orderId: string) {
     try {
       await cancelOrder.mutateAsync({ orderId });
-      toast("Order cancelled", "success");
-    } catch (err) {
-      toast(
-        `Cancel failed: ${err instanceof Error ? err.message : "unknown"}`,
-        "error"
-      );
+      toast('Order cancelled', 'success');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Cancel failed', 'error');
     }
-  };
+  }
 
-  const formatQty = (remaining: number, pair: string | undefined) => {
-    const pairConfig = pair ? PAIRS.find((p) => p.name === pair) : undefined;
-    const dec = pairConfig
-      ? tokenInfo[pairConfig.baseToken.toLowerCase()]?.decimals
-      : undefined;
-    return dec !== undefined
-      ? formatUnits(BigInt(remaining), dec)
-      : remaining.toString();
-  };
-
-  if (openOrders.length === 0) {
+  if (!openOrders.length) {
     return (
-      <div className="p-4 text-sm text-gray-500 text-center">
-        No open orders
-      </div>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>TIME</th>
+            <th>PAIR</th><th>SIDE</th>
+            <th className="num">PRICE</th>
+            <th className="num">REMAINING</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="empty-row">
+            <td colSpan={6}>NO OPEN ORDERS</td>
+          </tr>
+        </tbody>
+      </table>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-gray-500 border-b border-gray-800">
-            <th className="text-left px-3 py-2 font-medium">Side</th>
-            <th className="text-left px-3 py-2 font-medium">Pair</th>
-            <th className="text-right px-3 py-2 font-medium">Price</th>
-            <th className="text-right px-3 py-2 font-medium">Remaining</th>
-            <th className="text-right px-3 py-2 font-medium"></th>
+    <table className="tbl">
+      <thead>
+        <tr>
+          <th>PAIR</th><th>SIDE</th>
+          <th className="num">PRICE</th>
+          <th className="num">REMAINING</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {openOrders.map(o => (
+          <tr key={o.id}>
+            <td className="num" style={{ color: 'var(--fg-mute)' }}>{fmtTime(o.timestamp)}</td>
+            <td>{o.pair}</td>
+            <td className={o.side === 'buy' ? 'bid' : 'ask'}>
+              {o.side.toUpperCase()}
+            </td>
+            <td className="num">{formatPrice(o.price).toFixed(3)}</td>
+            <td className="num">{fmtRemaining(o.remaining, o.pair)}</td>
+            <td style={{ textAlign: 'right' }}>
+              <button
+                className="hdr-chip"
+                onClick={() => handleCancel(o.id)}
+                disabled={cancelOrder.isPending}
+                style={{ color: 'var(--ask)', borderStyle: 'solid', borderColor: 'var(--line-2)' }}
+              >
+                {cancelOrder.isPending ? '...' : 'CANCEL'}
+              </button>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {openOrders.map((order) => (
-            <tr key={order.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-              <td className={`px-3 py-2 ${order.side === "buy" ? "text-bid" : "text-ask"}`}>
-                {order.side?.toUpperCase() ?? "?"}
-              </td>
-              <td className="px-3 py-2 text-gray-300">{order.pair ?? "-"}</td>
-              <td className="px-3 py-2 text-right text-gray-300">
-                {order.price != null ? formatPrice(order.price) : "-"}
-              </td>
-              <td className="px-3 py-2 text-right text-gray-300">
-                {formatQty(order.remaining, order.pair)}
-              </td>
-              <td className="px-3 py-2 text-right">
-                <Button
-                  variant="ghost"
-                  className="text-xs px-2 py-1"
-                  onClick={() => handleCancel(order.id)}
-                  loading={cancelOrder.isPending}
-                >
-                  Cancel
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </tbody>
+    </table>
   );
 }

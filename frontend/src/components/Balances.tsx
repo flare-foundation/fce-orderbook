@@ -1,85 +1,107 @@
-import { formatUnits } from "viem";
-import { useMyState } from "../hooks/useMyState";
-import { useWalletBalances } from "../hooks/useWalletBalances";
-import { PAIRS } from "../config/generated";
+import { formatUnits } from 'viem';
+import { useMyState } from '../hooks/useMyState';
+import { useWalletBalances } from '../hooks/useWalletBalances';
+import { PAIRS } from '../config/generated';
 
-/** Show per-token balances: wallet (ERC20), available, and held (TEE state). */
-export function Balances() {
-  const { balances: teeBalances } = useMyState();
-  const { tokenInfo } = useWalletBalances();
-
-  const tokenNames: Record<string, string> = {};
-  const allTokens = new Set<string>();
-  for (const pair of PAIRS) {
-    const [base, quote] = pair.name.split("/");
-    const baseAddr = pair.baseToken.toLowerCase();
-    const quoteAddr = pair.quoteToken.toLowerCase();
-    tokenNames[baseAddr] = base;
-    tokenNames[quoteAddr] = quote;
-    allTokens.add(baseAddr);
-    allTokens.add(quoteAddr);
+function getUniqueTokens() {
+  const tokens = new Map<string, string>(); // address → symbol derived from pair name
+  for (const p of PAIRS) {
+    const [base, quote] = p.name.split('/');
+    tokens.set(p.baseToken.toLowerCase(), base);
+    tokens.set(p.quoteToken.toLowerCase(), quote);
   }
+  return Array.from(tokens.entries()).map(([address, symbol]) => ({ address, symbol }));
+}
+
+function fmtAmount(raw: number | bigint | undefined, decimals: number | undefined, dp = 4): string {
+  if (raw === undefined || raw === null) return '—';
+  if (decimals === undefined) return '—';
+  try {
+    const val = typeof raw === 'bigint' ? raw : BigInt(Math.floor(Number(raw)));
+    return parseFloat(formatUnits(val, decimals)).toFixed(dp);
+  } catch {
+    return '—';
+  }
+}
+
+export function Balances() {
+  const { balances } = useMyState();
+  const { tokenInfo } = useWalletBalances();
+  const tokens = getUniqueTokens();
 
   // Normalize teeBalances keys to lowercase so lookups work regardless of
   // whether the TEE returns checksummed or lowercase addresses.
-  const normalizedTeeBalances: typeof teeBalances = {};
-  for (const [k, v] of Object.entries(teeBalances)) {
-    normalizedTeeBalances[k.toLowerCase()] = v;
+  const normalizedBalances: typeof balances = {};
+  for (const [k, v] of Object.entries(balances)) {
+    normalizedBalances[k.toLowerCase()] = v;
   }
 
-  for (const addr of Object.keys(normalizedTeeBalances)) {
-    allTokens.add(addr);
-  }
-
-  const rows = Array.from(allTokens).map((addr) => {
-    const info = tokenInfo[addr];
+  // Compute grand total as sum of all human-readable amounts for the alloc bar
+  const totals = tokens.map(t => {
+    const info = tokenInfo[t.address];
     const decimals = info?.decimals;
-    const tee = normalizedTeeBalances[addr];
-
-    // If decimals haven't loaded yet, show raw numbers instead of silently
-    // formatting with a wrong fallback (18) that makes small balances render as 0.
-    const format = (raw: bigint) =>
-      decimals === undefined ? raw.toString() : formatUnits(raw, decimals);
-
-    return {
-      addr,
-      symbol: tokenNames[addr] ?? addr.slice(0, 10) + "...",
-      wallet: info?.balance !== undefined ? format(info.balance) : "—",
-      available: tee ? format(BigInt(tee.available)) : "0",
-      held: tee ? format(BigInt(tee.held)) : "0",
-    };
+    const wallet = info?.balance !== undefined && decimals !== undefined
+      ? parseFloat(formatUnits(info.balance, decimals))
+      : 0;
+    const tee = normalizedBalances[t.address];
+    const available = tee && decimals !== undefined
+      ? parseFloat(formatUnits(BigInt(Math.floor(tee.available)), decimals))
+      : 0;
+    const held = tee && decimals !== undefined
+      ? parseFloat(formatUnits(BigInt(Math.floor(tee.held)), decimals))
+      : 0;
+    return wallet + available + held;
   });
-
-  if (rows.length === 0) {
-    return (
-      <div className="p-4 text-sm text-gray-500 text-center">
-        No tokens configured
-      </div>
-    );
-  }
+  const grandTotal = totals.reduce((s, v) => s + v, 0);
 
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="text-gray-500 border-b border-gray-800">
-          <th className="text-left px-3 py-2 font-medium">Token</th>
-          <th className="text-right px-3 py-2 font-medium">Wallet</th>
-          <th className="text-right px-3 py-2 font-medium">Available</th>
-          <th className="text-right px-3 py-2 font-medium">Held</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.addr} className="border-b border-gray-800/50">
-            <td className="px-3 py-2 text-gray-300">{row.symbol}</td>
-            <td className="px-3 py-2 text-right text-gray-100">{row.wallet}</td>
-            <td className="px-3 py-2 text-right text-gray-100">
-              {row.available}
-            </td>
-            <td className="px-3 py-2 text-right text-gray-400">{row.held}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="bal-total">
+        <span className="label">PORTFOLIO</span>
+        <span className="value">{grandTotal.toFixed(2)}</span>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>ASSET</th>
+              <th className="num">WALLET</th>
+              <th className="num">TEE AVAIL</th>
+              <th className="num">TEE HELD</th>
+              <th>ALLOC</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tokens.map((t, i) => {
+              const info = tokenInfo[t.address];
+              const decimals = info?.decimals;
+              const walletBal = info?.balance;
+              const tee = normalizedBalances[t.address];
+              const allocPct = grandTotal > 0 ? Math.min((totals[i] / grandTotal) * 100, 100) : 0;
+
+              return (
+                <tr key={t.address}>
+                  <td style={{ fontWeight: 600, letterSpacing: '0.04em' }}>{t.symbol}</td>
+                  <td className="num">
+                    {fmtAmount(walletBal, decimals)}
+                  </td>
+                  <td className="num">
+                    {tee ? fmtAmount(tee.available, decimals) : '—'}
+                  </td>
+                  <td className="num dim">
+                    {tee ? fmtAmount(tee.held, decimals) : '—'}
+                  </td>
+                  <td>
+                    <div className="alloc-bar">
+                      <div style={{ width: `${allocPct}%` }} />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
