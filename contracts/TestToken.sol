@@ -6,7 +6,7 @@ pragma solidity ^0.8.27;
 contract TestToken {
     string public name;
     string public symbol;
-    uint8 public constant decimals = 18;
+    uint8 public constant decimals = 6;
     uint256 public totalSupply;
 
     mapping(address => uint256) public balanceOf;

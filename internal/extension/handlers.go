@@ -16,6 +16,13 @@ import (
 	teetypes "github.com/flare-foundation/tee-node/pkg/types"
 )
 
+// pricePrecision is the multiplier applied to human-readable prices before they
+// are stored in the TEE. This allows 3 decimal places of price precision (0.001)
+// even when base and quote tokens have equal decimals, by dividing price*quantity
+// back by this factor wherever a quote-token amount is computed.
+// The frontend must multiply user-entered prices by this same constant.
+const pricePrecision = 1000
+
 // processPlaceOrder handles PLACE_ORDER direct instructions.
 func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.DataFixed, msg hexutil.Bytes) teetypes.ActionResult {
 	var req types.PlaceOrderRequest
@@ -188,7 +195,7 @@ func (e *Extension) processMatch(m orderbook.Match, pairConfig config.TradingPai
 	sellOwner := e.getOrderOwner(m.SellOrderID)
 
 	// The buyer's held quote tokens go to the seller.
-	quoteAmount := m.Quantity * m.Price
+	quoteAmount := m.Quantity * m.Price / pricePrecision
 	_ = e.balances.Transfer(buyOwner, sellOwner, pairConfig.QuoteToken, quoteAmount)
 
 	// The seller's held base tokens go to the buyer.
@@ -262,7 +269,7 @@ func (e *Extension) calculateHold(user string, pair config.TradingPairConfig, or
 				return holdToken, 0, fmt.Errorf("no available %s balance for market buy", holdToken.Hex())
 			}
 		} else {
-			holdAmount = order.Quantity * order.Price
+			holdAmount = order.Quantity * order.Price / pricePrecision
 		}
 	case orderbook.Sell:
 		// Sell: hold base tokens (quantity for limit, all available for market).
@@ -285,7 +292,7 @@ func (e *Extension) calculateHold(user string, pair config.TradingPairConfig, or
 func (e *Extension) calculateRelease(pair config.TradingPairConfig, order *orderbook.Order) (common.Address, uint64) {
 	switch order.Side {
 	case orderbook.Buy:
-		return pair.QuoteToken, order.Remaining * order.Price
+		return pair.QuoteToken, order.Remaining * order.Price / pricePrecision
 	case orderbook.Sell:
 		return pair.BaseToken, order.Remaining
 	default:
@@ -298,7 +305,7 @@ func totalFilled(matches []orderbook.Match, order *orderbook.Order) uint64 {
 	var total uint64
 	for _, m := range matches {
 		if order.Side == orderbook.Buy {
-			total += m.Quantity * m.Price // quote token used
+			total += m.Quantity * m.Price / pricePrecision // quote token used
 		} else {
 			total += m.Quantity // base token used
 		}

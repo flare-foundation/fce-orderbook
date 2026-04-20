@@ -10,10 +10,13 @@ export function useBookState(pair: string) {
   });
 
   const pairState: PairState | undefined = query.data?.state?.pairs?.[pair];
+  const allMatches = query.data?.state?.matches ?? [];
+  const matches = allMatches.filter((m) => m.pair === pair);
 
   return {
     ...query,
     bids: pairState?.bids ?? [],
     asks: pairState?.asks ?? [],
+    matches,
   };
 }

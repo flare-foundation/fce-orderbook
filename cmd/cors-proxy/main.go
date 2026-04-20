@@ -4,7 +4,10 @@
 //
 // Usage:
 //
-//	go run ./cmd/cors-proxy --target http://localhost:6664 --listen :6665 --allow-origin http://localhost:5173
+//	go run ./cmd/cors-proxy --target http://localhost:6664 --listen :6670 --allow-origin http://localhost:5173
+//
+// Note: Chrome blocks ports 6665-6669 as "unsafe" (IRC range), so we listen on
+// 6670 by default — browsers will refuse to connect to 6665.
 package main
 
 import (
@@ -18,7 +21,7 @@ import (
 
 func main() {
 	target := flag.String("target", "http://localhost:6664", "upstream TEE proxy URL")
-	listen := flag.String("listen", ":6665", "address to listen on")
+	listen := flag.String("listen", ":6670", "address to listen on")
 	allowOrigin := flag.String("allow-origin", "*", "Access-Control-Allow-Origin value")
 	flag.Parse()
 
