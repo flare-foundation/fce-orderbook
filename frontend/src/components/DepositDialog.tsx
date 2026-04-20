@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useAccount } from "wagmi";
+import { parseUnits, formatUnits } from "viem";
 import { Dialog } from "./ui/Dialog";
 import { Input } from "./ui/Input";
 import { Button } from "./ui/Button";
 import { useDeposit } from "../hooks/useDeposit";
+import { useWalletBalances } from "../hooks/useWalletBalances";
 import { useToast } from "./ui/Toast";
 import { PAIRS, INSTRUCTION_SENDER } from "../config/generated";
 import type { Address } from "viem";
@@ -16,6 +18,7 @@ interface Props {
 export function DepositDialog({ open, onClose }: Props) {
   const { isConnected } = useAccount();
   const deposit = useDeposit();
+  const { tokenInfo } = useWalletBalances();
   const { toast } = useToast();
   const [tokenIdx, setTokenIdx] = useState(0);
   const [amount, setAmount] = useState("");
@@ -32,9 +35,28 @@ export function DepositDialog({ open, onClose }: Props) {
     }
   }
 
+  const selected = tokens[tokenIdx];
+  const info = selected ? tokenInfo[selected.address.toLowerCase()] : undefined;
+  const decimals = info?.decimals;
+  const walletFormatted =
+    info?.balance !== undefined && decimals !== undefined
+      ? formatUnits(info.balance, decimals)
+      : "—";
+
   const handleDeposit = async () => {
-    const amt = Number(amount);
-    if (amt <= 0) {
+    if (!selected) return;
+    if (decimals === undefined) {
+      toast("Loading token decimals, please try again", "error");
+      return;
+    }
+    let scaled: bigint;
+    try {
+      scaled = parseUnits(amount, decimals);
+    } catch {
+      toast("Invalid amount", "error");
+      return;
+    }
+    if (scaled <= 0n) {
       toast("Amount must be greater than 0", "error");
       return;
     }
@@ -42,10 +64,10 @@ export function DepositDialog({ open, onClose }: Props) {
     try {
       await deposit.mutateAsync({
         instructionSender: INSTRUCTION_SENDER as Address,
-        token: tokens[tokenIdx].address,
-        amount: BigInt(amt),
+        token: selected.address,
+        amount: scaled,
       });
-      toast(`Deposited ${amt} ${tokens[tokenIdx].symbol}`, "success");
+      toast(`Deposited ${amount} ${selected.symbol}`, "success");
       setAmount("");
       onClose();
     } catch (err) {
@@ -74,15 +96,34 @@ export function DepositDialog({ open, onClose }: Props) {
           </select>
         </div>
 
-        <Input
-          label="Amount (raw units)"
-          type="number"
-          min="0"
-          step="1"
-          placeholder="10000"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-        />
+        <div>
+          <Input
+            label={`Amount (${selected?.symbol ?? ""})`}
+            type="number"
+            min="0"
+            step="any"
+            placeholder="100"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+          <div className="text-xs text-gray-500 mt-1 flex justify-between">
+            <span>
+              Wallet: {walletFormatted} {selected?.symbol}
+            </span>
+            <button
+              type="button"
+              className="text-blue-400 hover:text-blue-300"
+              onClick={() =>
+                info?.balance !== undefined &&
+                decimals !== undefined &&
+                setAmount(formatUnits(info.balance, decimals))
+              }
+              disabled={info?.balance === undefined || decimals === undefined}
+            >
+              Max
+            </button>
+          </div>
+        </div>
 
         <p className="text-xs text-gray-500">
           This will approve and deposit tokens to the orderbook vault.

@@ -83,15 +83,31 @@ export async function postDirect(
 }
 
 /**
- * Poll for a direct instruction result.
- * Retries up to `maxAttempts` times with `intervalMs` delay.
+ * Results are stored under different submission tags depending on how the
+ * instruction was dispatched:
+ *   - "submit"    → direct instructions (POST /direct)
+ *   - "threshold" → on-chain instructions (TeeInstructionsSent events).
+ *                   Later re-emitted under "end" once finalized — we poll
+ *                   "threshold" because it's written first and both carry the
+ *                   TEE's result data.
+ *
+ * The Go tooling uses two separate pollers for the same reason (see
+ * tools/pkg/utils/direct.go:pollDirectResult and tools/pkg/fccutils/tee_calls.go:ActionResult).
+ */
+export type SubmissionTag = "submit" | "threshold" | "end";
+
+/**
+ * Poll for an action result. Retries up to `maxAttempts` with `intervalMs` delay.
+ * `submissionTag` defaults to "submit" (direct instructions); pass "threshold"
+ * for on-chain instructions like deposits/withdrawals.
  */
 export async function pollResult(
   actionId: string,
   maxAttempts = 15,
-  intervalMs = 2000
+  intervalMs = 2000,
+  submissionTag: SubmissionTag = "submit"
 ): Promise<ActionResult> {
-  const url = `${baseUrl()}/action/result/${actionId}?submissionTag=submit`;
+  const url = `${baseUrl()}/action/result/${actionId}?submissionTag=${submissionTag}`;
 
   for (let i = 0; i < maxAttempts; i++) {
     try {
@@ -105,7 +121,18 @@ export async function pollResult(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 
-  throw new Error(`Timed out polling for action ${actionId}`);
+  throw new Error(`Timed out polling for action ${actionId} (tag=${submissionTag})`);
+}
+
+/** Hex-decode result.data if it starts with 0x, then JSON.parse. */
+export function decodeResultData<T>(data: string): T {
+  let s = data;
+  if (s.startsWith("0x")) {
+    const hex = s.slice(2);
+    const bytes = new Uint8Array(hex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+    s = new TextDecoder().decode(bytes);
+  }
+  return JSON.parse(s) as T;
 }
 
 /**
@@ -127,7 +154,7 @@ export async function sendDirectAndPoll<T>(
   }
 
   if (actionResult.result.data) {
-    return JSON.parse(actionResult.result.data) as T;
+    return decodeResultData<T>(actionResult.result.data);
   }
   return undefined as unknown as T;
 }

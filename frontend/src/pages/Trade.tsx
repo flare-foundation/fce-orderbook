@@ -7,8 +7,10 @@ import { Balances } from "../components/Balances";
 import { RecentTrades } from "../components/RecentTrades";
 import { DepositDialog } from "../components/DepositDialog";
 import { WithdrawDialog } from "../components/WithdrawDialog";
+import { TeeProxyStatus } from "../components/TeeProxyStatus";
 import { Tabs } from "../components/ui/Tabs";
 import { useBookState } from "../hooks/useBookState";
+import { useWalletBalances } from "../hooks/useWalletBalances";
 import { PAIRS } from "../config/generated";
 
 export function Trade() {
@@ -21,6 +23,11 @@ export function Trade() {
   const [rightTab, setRightTab] = useState("Balances");
 
   const { bids, asks } = useBookState(pair);
+  const { tokenInfo } = useWalletBalances();
+  const pairConfig = PAIRS.find((p) => p.name === pair);
+  const baseDecimals = pairConfig
+    ? tokenInfo[pairConfig.baseToken.toLowerCase()]?.decimals
+    : undefined;
 
   return (
     <div className="flex flex-col h-screen">
@@ -30,6 +37,8 @@ export function Trade() {
         onDeposit={() => setDepositOpen(true)}
         onWithdraw={() => setWithdrawOpen(true)}
       />
+
+      <TeeProxyStatus />
 
       <div className="flex-1 grid grid-cols-[1fr_320px_1fr] min-h-0">
         {/* Left: Orderbook */}
@@ -41,6 +50,7 @@ export function Trade() {
             <OrderBook
               bids={bids}
               asks={asks}
+              baseDecimals={baseDecimals}
               onPriceClick={(price) => setPrefillPrice(price)}
             />
           </div>

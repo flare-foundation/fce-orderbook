@@ -37,8 +37,12 @@ contract OrderbookInstructionSender {
     /// @notice Admin addresses (set at deploy time).
     address[] public admins;
 
-    /// @notice KYC allowlist for deposits.
+    /// @notice KYC allowlist for deposits. Only enforced when `kycEnabled` is true.
     mapping(address => bool) public allowed;
+
+    /// @notice When true, only addresses in `allowed` may deposit. Defaults to false
+    ///         (open access). Admins toggle via `setKycEnabled`.
+    bool public kycEnabled;
 
     /// @notice Replay protection for withdrawals.
     mapping(bytes32 => bool) public usedWithdrawalIds;
@@ -108,6 +112,11 @@ contract OrderbookInstructionSender {
         allowed[user] = false;
     }
 
+    /// @notice Toggle KYC gating on deposits. When false (default), anyone may deposit.
+    function setKycEnabled(bool enabled) external onlyAdmin {
+        kycEnabled = enabled;
+    }
+
     // --- Deposit (KYC-gated, on-chain instruction) ---
 
     /// @notice Deposit ERC20 tokens. Transfers tokens to this contract (vault) and sends
@@ -115,7 +124,7 @@ contract OrderbookInstructionSender {
     /// @param token The ERC20 token address.
     /// @param amount The amount to deposit (in smallest units).
     function deposit(address token, uint256 amount) external payable {
-        require(allowed[msg.sender], "not allowed to deposit");
+        require(!kycEnabled || allowed[msg.sender], "not allowed to deposit");
         require(amount > 0, "zero amount");
 
         require(IERC20(token).transferFrom(msg.sender, address(this), amount), "transferFrom failed");

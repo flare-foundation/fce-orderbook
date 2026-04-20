@@ -16,12 +16,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"time"
 
 	"extension-scaffold/tools/pkg/configs"
 	"extension-scaffold/tools/pkg/contracts/orderbook"
@@ -31,9 +33,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 )
+
+// txSpacing is a small pause between consecutive transactions, giving
+// load-balanced public RPC nodes time to propagate nonce state between peers.
+const txSpacing = 500 * time.Millisecond
 
 const (
 	testTokenArtifact = "../out/TestToken.sol/TestToken.json"
@@ -83,12 +90,14 @@ func main() {
 	// --- Step 2: Deploy test tokens ---
 	logger.Infof("Step 2: Deploying test tokens...")
 
+	time.Sleep(txSpacing)
 	quoteToken, err := instrutils.DeployTestToken(s, testTokenArtifact, "TestUSDT", "TUSDT")
 	if err != nil {
 		fccutils.FatalWithCause(fmt.Errorf("deploying quote token: %w", err))
 	}
 	logger.Infof("  Quote token (TUSDT) deployed at: %s", quoteToken.Hex())
 
+	time.Sleep(txSpacing)
 	baseToken, err := instrutils.DeployTestToken(s, testTokenArtifact, "TestFLR", "TFLR")
 	if err != nil {
 		fccutils.FatalWithCause(fmt.Errorf("deploying base token: %w", err))
@@ -110,11 +119,13 @@ func main() {
 	logger.Infof("Step 4: Minting tokens to deployer...")
 	amount := big.NewInt(mintAmount)
 
+	time.Sleep(txSpacing)
 	if err := instrutils.MintERC20(s, quoteToken, deployer, amount); err != nil {
 		fccutils.FatalWithCause(fmt.Errorf("minting quote token: %w", err))
 	}
 	logger.Infof("  Minted %d TUSDT to %s", mintAmount, deployer.Hex())
 
+	time.Sleep(txSpacing)
 	if err := instrutils.MintERC20(s, baseToken, deployer, amount); err != nil {
 		fccutils.FatalWithCause(fmt.Errorf("minting base token: %w", err))
 	}
@@ -124,11 +135,13 @@ func main() {
 	logger.Infof("Step 5: Approving InstructionSender to spend tokens...")
 	approveAmt := big.NewInt(approveAmount)
 
+	time.Sleep(txSpacing)
 	if err := instrutils.ApproveERC20(s, quoteToken, instructionSenderAddr, approveAmt); err != nil {
 		fccutils.FatalWithCause(fmt.Errorf("approving quote token: %w", err))
 	}
 	logger.Infof("  Approved %d TUSDT", approveAmount)
 
+	time.Sleep(txSpacing)
 	if err := instrutils.ApproveERC20(s, baseToken, instructionSenderAddr, approveAmt); err != nil {
 		fccutils.FatalWithCause(fmt.Errorf("approving base token: %w", err))
 	}
@@ -156,14 +169,35 @@ func allowUser(s *support.Support, instructionSenderAddr, user common.Address) e
 		return fmt.Errorf("binding contract: %w", err)
 	}
 
-	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
-	if err != nil {
-		return fmt.Errorf("creating transactor: %w", err)
-	}
+	var tx *types.Transaction
+	var sendErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
+		if err != nil {
+			return fmt.Errorf("creating transactor: %w", err)
+		}
+		if attempt > 0 {
+			gp, gerr := s.ChainClient.SuggestGasPrice(context.Background())
+			if gerr != nil {
+				return fmt.Errorf("suggesting gas price: %w", gerr)
+			}
+			mul := new(big.Int).Mul(gp, big.NewInt(int64(100+20*attempt)))
+			opts.GasPrice = new(big.Int).Div(mul, big.NewInt(100))
+		}
 
-	tx, err := sender.AllowUser(opts, user)
-	if err != nil {
-		return fmt.Errorf("calling allowUser: %w", err)
+		tx, sendErr = sender.AllowUser(opts, user)
+		if sendErr == nil {
+			break
+		}
+		if !instrutils.IsRetryableTxError(sendErr) {
+			return fmt.Errorf("calling allowUser: %w", sendErr)
+		}
+		if attempt < 2 {
+			time.Sleep(2 * time.Second)
+		}
+	}
+	if sendErr != nil {
+		return fmt.Errorf("calling allowUser after retries: %w", sendErr)
 	}
 
 	_, err = support.CheckTx(tx, s.ChainClient)

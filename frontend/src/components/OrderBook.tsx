@@ -1,13 +1,15 @@
+import { formatUnits } from "viem";
 import type { PriceLevel } from "../lib/orderbook";
+import { formatPrice } from "../lib/price";
 
 interface Props {
   bids: PriceLevel[];
   asks: PriceLevel[];
   onPriceClick: (price: number) => void;
+  baseDecimals?: number;
 }
 
-export function OrderBook({ bids, asks, onPriceClick }: Props) {
-  // Show asks ascending (lowest at bottom, closest to spread).
+export function OrderBook({ bids, asks, onPriceClick, baseDecimals }: Props) {
   const sortedAsks = [...asks].sort((a, b) => b.price - a.price);
   const sortedBids = [...bids].sort((a, b) => b.price - a.price);
 
@@ -32,7 +34,8 @@ export function OrderBook({ bids, asks, onPriceClick }: Props) {
             level={level}
             side="ask"
             maxQty={maxQty}
-            onClick={() => onPriceClick(level.price)}
+            baseDecimals={baseDecimals}
+            onClick={() => onPriceClick(formatPrice(level.price))}
           />
         ))}
       </div>
@@ -40,7 +43,7 @@ export function OrderBook({ bids, asks, onPriceClick }: Props) {
       {/* Spread indicator */}
       <div className="px-3 py-1 text-xs text-gray-500 border-y border-gray-800 text-center">
         {sortedAsks.length > 0 && sortedBids.length > 0
-          ? `Spread: ${sortedAsks[sortedAsks.length - 1].price - sortedBids[0].price}`
+          ? `Spread: ${formatPrice(sortedAsks[sortedAsks.length - 1].price - sortedBids[0].price)}`
           : "No spread"}
       </div>
 
@@ -52,7 +55,8 @@ export function OrderBook({ bids, asks, onPriceClick }: Props) {
             level={level}
             side="bid"
             maxQty={maxQty}
-            onClick={() => onPriceClick(level.price)}
+            baseDecimals={baseDecimals}
+            onClick={() => onPriceClick(formatPrice(level.price))}
           />
         ))}
       </div>
@@ -64,16 +68,23 @@ function PriceLevelRow({
   level,
   side,
   maxQty,
+  baseDecimals,
   onClick,
 }: {
   level: PriceLevel;
   side: "bid" | "ask";
   maxQty: number;
+  baseDecimals?: number;
   onClick: () => void;
 }) {
   const pct = (level.quantity / maxQty) * 100;
   const color = side === "bid" ? "text-bid" : "text-ask";
   const bg = side === "bid" ? "bg-green-500/10" : "bg-red-500/10";
+
+  const displayQty =
+    baseDecimals !== undefined
+      ? formatUnits(BigInt(level.quantity), baseDecimals)
+      : level.quantity.toString();
 
   return (
     <div
@@ -84,10 +95,8 @@ function PriceLevelRow({
         className={`absolute inset-y-0 right-0 ${bg}`}
         style={{ width: `${pct}%` }}
       />
-      <span className={`relative ${color}`}>{level.price}</span>
-      <span className="relative text-right text-gray-300">
-        {level.quantity}
-      </span>
+      <span className={`relative ${color}`}>{formatPrice(level.price)}</span>
+      <span className="relative text-right text-gray-300">{displayQty}</span>
     </div>
   );
 }

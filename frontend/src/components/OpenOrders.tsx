@@ -1,11 +1,16 @@
+import { formatUnits } from "viem";
 import { useMyState } from "../hooks/useMyState";
 import { useCancelOrder } from "../hooks/useCancelOrder";
+import { useWalletBalances } from "../hooks/useWalletBalances";
 import { Button } from "./ui/Button";
 import { useToast } from "./ui/Toast";
+import { PAIRS } from "../config/generated";
+import { formatPrice } from "../lib/price";
 
 export function OpenOrders() {
   const { openOrders } = useMyState();
   const cancelOrder = useCancelOrder();
+  const { tokenInfo } = useWalletBalances();
   const { toast } = useToast();
 
   const handleCancel = async (orderId: string) => {
@@ -18,6 +23,16 @@ export function OpenOrders() {
         "error"
       );
     }
+  };
+
+  const formatQty = (remaining: number, pair: string | undefined) => {
+    const pairConfig = pair ? PAIRS.find((p) => p.name === pair) : undefined;
+    const dec = pairConfig
+      ? tokenInfo[pairConfig.baseToken.toLowerCase()]?.decimals
+      : undefined;
+    return dec !== undefined
+      ? formatUnits(BigInt(remaining), dec)
+      : remaining.toString();
   };
 
   if (openOrders.length === 0) {
@@ -47,8 +62,12 @@ export function OpenOrders() {
                 {order.side?.toUpperCase() ?? "?"}
               </td>
               <td className="px-3 py-2 text-gray-300">{order.pair ?? "-"}</td>
-              <td className="px-3 py-2 text-right text-gray-300">{order.price ?? "-"}</td>
-              <td className="px-3 py-2 text-right text-gray-300">{order.remaining}</td>
+              <td className="px-3 py-2 text-right text-gray-300">
+                {order.price != null ? formatPrice(order.price) : "-"}
+              </td>
+              <td className="px-3 py-2 text-right text-gray-300">
+                {formatQty(order.remaining, order.pair)}
+              </td>
               <td className="px-3 py-2 text-right">
                 <Button
                   variant="ghost"

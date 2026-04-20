@@ -17,30 +17,30 @@ const (
 )
 
 type Order struct {
-	ID        string
-	Owner     string
-	Pair      string
-	Side      Side
-	Type      OrderType
-	Price     uint64
-	Quantity  uint64
-	Remaining uint64
-	Timestamp int64
+	ID        string    `json:"id"`
+	Owner     string    `json:"owner"`
+	Pair      string    `json:"pair"`
+	Side      Side      `json:"side"`
+	Type      OrderType `json:"type"`
+	Price     uint64    `json:"price"`
+	Quantity  uint64    `json:"quantity"`
+	Remaining uint64    `json:"remaining"`
+	Timestamp int64     `json:"timestamp"`
 }
 
 type Match struct {
-	BuyOrderID  string
-	SellOrderID string
-	Pair        string
-	Price       uint64
-	Quantity    uint64
-	Timestamp   int64
+	BuyOrderID  string `json:"buyOrderId"`
+	SellOrderID string `json:"sellOrderId"`
+	Pair        string `json:"pair"`
+	Price       uint64 `json:"price"`
+	Quantity    uint64 `json:"quantity"`
+	Timestamp   int64  `json:"timestamp"`
 }
 
 type PriceLevel struct {
-	Price      uint64
-	Quantity   uint64
-	OrderCount int
+	Price      uint64 `json:"price"`
+	Quantity   uint64 `json:"quantity"`
+	OrderCount int    `json:"orderCount"`
 }
 
 var (

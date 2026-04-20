@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useAccount } from "wagmi";
+import { parseUnits } from "viem";
 import { Dialog } from "./ui/Dialog";
 import { Input } from "./ui/Input";
 import { Button } from "./ui/Button";
 import { useWithdraw } from "../hooks/useWithdraw";
+import { useWalletBalances } from "../hooks/useWalletBalances";
 import { useToast } from "./ui/Toast";
 import { PAIRS, INSTRUCTION_SENDER } from "../config/generated";
 import type { Address } from "viem";
@@ -16,6 +18,7 @@ interface Props {
 export function WithdrawDialog({ open, onClose }: Props) {
   const { address, isConnected } = useAccount();
   const withdraw = useWithdraw();
+  const { tokenInfo } = useWalletBalances();
   const { toast } = useToast();
   const [tokenIdx, setTokenIdx] = useState(0);
   const [amount, setAmount] = useState("");
@@ -31,10 +34,24 @@ export function WithdrawDialog({ open, onClose }: Props) {
     }
   }
 
+  const selected = tokens[tokenIdx];
+  const info = selected ? tokenInfo[selected.address.toLowerCase()] : undefined;
+  const decimals = info?.decimals;
+
   const handleWithdraw = async () => {
-    if (!address) return;
-    const amt = Number(amount);
-    if (amt <= 0) {
+    if (!address || !selected) return;
+    if (decimals === undefined) {
+      toast("Loading token decimals, please try again", "error");
+      return;
+    }
+    let scaled: bigint;
+    try {
+      scaled = parseUnits(amount, decimals);
+    } catch {
+      toast("Invalid amount", "error");
+      return;
+    }
+    if (scaled <= 0n) {
       toast("Amount must be greater than 0", "error");
       return;
     }
@@ -42,11 +59,11 @@ export function WithdrawDialog({ open, onClose }: Props) {
     try {
       await withdraw.mutateAsync({
         instructionSender: INSTRUCTION_SENDER as Address,
-        token: tokens[tokenIdx].address,
-        amount: BigInt(amt),
+        token: selected.address,
+        amount: scaled,
         to: address,
       });
-      toast(`Withdrew ${amt} ${tokens[tokenIdx].symbol}`, "success");
+      toast(`Withdrew ${amount} ${selected.symbol}`, "success");
       setAmount("");
       onClose();
     } catch (err) {
@@ -76,10 +93,10 @@ export function WithdrawDialog({ open, onClose }: Props) {
         </div>
 
         <Input
-          label="Amount (raw units)"
+          label={`Amount (${selected?.symbol ?? ""})`}
           type="number"
           min="0"
-          step="1"
+          step="any"
           placeholder="100"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}

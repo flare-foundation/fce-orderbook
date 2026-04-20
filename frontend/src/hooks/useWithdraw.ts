@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useWriteContract } from "wagmi";
+import { useWriteContract, usePublicClient } from "wagmi";
 import type { Address } from "viem";
 import { orderbookInstructionSenderAbi } from "../abi/orderbookInstructionSender";
 import { INSTRUCTION_FEE } from "../lib/deposit";
-import { pollResult } from "../lib/teeClient";
+import { pollResult, decodeResultData } from "../lib/teeClient";
+import { findInstructionId } from "../lib/instructionId";
 import type { WithdrawResp } from "../lib/withdraw";
 
 interface WithdrawArgs {
@@ -16,12 +17,15 @@ interface WithdrawArgs {
 
 export function useWithdraw() {
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
   const queryClient = useQueryClient();
   const [step, setStep] = useState<string>("");
   const [cachedSignature, setCachedSignature] = useState<WithdrawResp | null>(null);
 
   const mutation = useMutation<`0x${string}`, Error, WithdrawArgs>({
     mutationFn: async ({ instructionSender, token, amount, to }) => {
+      if (!publicClient) throw new Error("No public client");
+
       // Step 1: Send withdraw instruction on-chain.
       setStep("Sending withdraw transaction...");
       const withdrawTx = await writeContractAsync({
@@ -32,18 +36,26 @@ export function useWithdraw() {
         value: INSTRUCTION_FEE,
       });
 
-      // Wait a moment for the tx to be indexed.
-      await new Promise((r) => setTimeout(r, 3000));
+      const withdrawReceipt = await publicClient.waitForTransactionReceipt({ hash: withdrawTx });
+      if (withdrawReceipt.status !== "success") {
+        throw new Error(`Withdraw tx reverted (${withdrawTx})`);
+      }
+
+      const instructionId = findInstructionId(withdrawReceipt.logs);
+      if (!instructionId) {
+        throw new Error("Withdraw tx mined but no TeeInstructionsSent event found");
+      }
 
       // Step 2: Poll proxy for TEE-signed result.
+      // On-chain instructions are stored with submissionTag="threshold" (not "submit").
       setStep("Waiting for TEE signature...");
-      const actionResult = await pollResult(withdrawTx, 30, 2000);
+      const actionResult = await pollResult(instructionId, 30, 2000, "threshold");
 
       if (actionResult.result.status !== 1) {
         throw new Error(`Withdrawal failed: ${actionResult.result.log}`);
       }
 
-      const wr: WithdrawResp = JSON.parse(actionResult.result.data);
+      const wr: WithdrawResp = decodeResultData<WithdrawResp>(actionResult.result.data);
       setCachedSignature(wr);
 
       // Step 3: Execute withdrawal on-chain.
@@ -67,6 +79,7 @@ export function useWithdraw() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["myState"] });
+      queryClient.invalidateQueries({ queryKey: ["readContracts"] });
       setStep("");
     },
     onError: () => {
@@ -95,6 +108,7 @@ export function useWithdraw() {
     setCachedSignature(null);
     setStep("");
     queryClient.invalidateQueries({ queryKey: ["myState"] });
+    queryClient.invalidateQueries({ queryKey: ["readContracts"] });
     return tx;
   };
 

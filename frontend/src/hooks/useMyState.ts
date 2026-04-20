@@ -12,6 +12,7 @@ export function useMyState() {
     queryFn: () => getMyState(address!.toLowerCase()),
     enabled: !!address,
     refetchInterval: 3000,
+    retry: false,
   });
 
   const invalidate = () =>

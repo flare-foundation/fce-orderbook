@@ -1,28 +1,38 @@
+import { formatUnits } from "viem";
 import { useBookState } from "../hooks/useBookState";
+import { useWalletBalances } from "../hooks/useWalletBalances";
+import { PAIRS } from "../config/generated";
+import { formatPrice } from "../lib/price";
 
 interface Props {
   pair: string;
 }
 
-/**
- * Shows the tail of recent matches. Since the extension's GET_BOOK_STATE
- * returns the full state (not a match log), we show the current book
- * snapshot as a proxy. A proper trade history would require a dedicated
- * endpoint — this is an explicit non-goal per the plan.
- */
 export function RecentTrades({ pair }: Props) {
-  const { bids, asks } = useBookState(pair);
+  const { matches } = useBookState(pair);
+  const { tokenInfo } = useWalletBalances();
 
-  // Combine and show as "recent activity" — best bid/ask levels.
-  const levels = [
-    ...asks.slice(0, 5).map((a) => ({ ...a, side: "sell" as const })),
-    ...bids.slice(0, 5).map((b) => ({ ...b, side: "buy" as const })),
-  ];
+  const pairConfig = PAIRS.find((p) => p.name === pair);
+  const baseDecimals = pairConfig
+    ? tokenInfo[pairConfig.baseToken.toLowerCase()]?.decimals
+    : undefined;
 
-  if (levels.length === 0) {
+  const formatQty = (raw: number) =>
+    baseDecimals !== undefined
+      ? formatUnits(BigInt(raw), baseDecimals)
+      : raw.toString();
+
+  const formatTime = (ts: number) => {
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  const recent = [...matches].reverse().slice(0, 20);
+
+  if (recent.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500 text-center">
-        No recent activity
+        No trades yet
       </div>
     );
   }
@@ -31,26 +41,22 @@ export function RecentTrades({ pair }: Props) {
     <table className="w-full text-xs">
       <thead>
         <tr className="text-gray-500 border-b border-gray-800">
-          <th className="text-left px-3 py-2 font-medium">Side</th>
           <th className="text-right px-3 py-2 font-medium">Price</th>
           <th className="text-right px-3 py-2 font-medium">Quantity</th>
+          <th className="text-right px-3 py-2 font-medium">Time</th>
         </tr>
       </thead>
       <tbody>
-        {levels.map((level, i) => (
+        {recent.map((trade, i) => (
           <tr key={i} className="border-b border-gray-800/50">
-            <td
-              className={`px-3 py-2 ${
-                level.side === "buy" ? "text-bid" : "text-ask"
-              }`}
-            >
-              {level.side.toUpperCase()}
+            <td className="px-3 py-2 text-right text-gray-300">
+              {formatPrice(trade.price)}
             </td>
             <td className="px-3 py-2 text-right text-gray-300">
-              {level.price}
+              {formatQty(trade.quantity)}
             </td>
-            <td className="px-3 py-2 text-right text-gray-300">
-              {level.quantity}
+            <td className="px-3 py-2 text-right text-gray-500">
+              {formatTime(trade.timestamp)}
             </td>
           </tr>
         ))}

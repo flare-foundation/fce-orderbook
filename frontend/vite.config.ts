@@ -6,15 +6,15 @@ export default defineConfig({
   server: {
     proxy: {
       "/direct": {
-        target: "http://localhost:6665",
+        target: process.env.VITE_PROXY_UPSTREAM || "http://localhost:6674",
         changeOrigin: true,
       },
       "/state": {
-        target: "http://localhost:6665",
+        target: process.env.VITE_PROXY_UPSTREAM || "http://localhost:6674",
         changeOrigin: true,
       },
       "/action": {
-        target: "http://localhost:6665",
+        target: process.env.VITE_PROXY_UPSTREAM || "http://localhost:6674",
         changeOrigin: true,
       },
     },

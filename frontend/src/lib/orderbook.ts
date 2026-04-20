@@ -76,9 +76,20 @@ export interface PairState {
   asks: PriceLevel[];
 }
 
+export interface BookMatch {
+  buyOrderId: string;
+  sellOrderId: string;
+  pair: string;
+  price: number;
+  quantity: number;
+  timestamp: number;
+}
+
 export interface BookStateResp {
   state: {
     pairs: Record<string, PairState>;
+    matchCount: number;
+    matches: BookMatch[];
   };
 }
 

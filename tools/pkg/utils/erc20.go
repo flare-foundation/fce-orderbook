@@ -28,6 +28,34 @@ type forgeArtifact struct {
 	} `json:"bytecode"`
 }
 
+// Retry parameters for transactions that hit load-balanced-RPC nonce races.
+const (
+	txMaxAttempts    = 3
+	txRetryDelay     = 2 * time.Second
+	txGasBumpPercent = 20 // cumulative per retry
+)
+
+// IsRetryableTxError returns true for errors that indicate a transient nonce
+// or mempool race — typical on load-balanced public RPCs where the node that
+// sees our next tx hasn't yet observed the previous one being mined.
+// Exported for reuse by callers that wrap their own contract bindings.
+func IsRetryableTxError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "replacement transaction underpriced") ||
+		strings.Contains(msg, "already known") ||
+		strings.Contains(msg, "known transaction") ||
+		strings.Contains(msg, "nonce too low")
+}
+
+// bumpGasPrice returns gasPrice * (100 + pct) / 100.
+func bumpGasPrice(gasPrice *big.Int, pct int) *big.Int {
+	mul := new(big.Int).Mul(gasPrice, big.NewInt(int64(100+pct)))
+	return new(big.Int).Div(mul, big.NewInt(100))
+}
+
 // DeployTestToken deploys a TestToken contract from the forge build output.
 // artifactPath is typically "out/TestToken.sol/TestToken.json".
 // Returns the deployed address.
@@ -67,26 +95,43 @@ func DeployTestToken(s *support.Support, artifactPath, name, symbol string) (com
 	// Deploy: bytecode + constructor args.
 	deployData := append(bytecode, constructorArgs...)
 
-	gasPrice, err := s.ChainClient.SuggestGasPrice(context.Background())
-	if err != nil {
-		return common.Address{}, errors.Errorf("suggesting gas price: %s", err)
+	var signedTx *types.Transaction
+	var sendErr error
+	for attempt := 0; attempt < txMaxAttempts; attempt++ {
+		gasPrice, err := s.ChainClient.SuggestGasPrice(context.Background())
+		if err != nil {
+			return common.Address{}, errors.Errorf("suggesting gas price: %s", err)
+		}
+		if attempt > 0 {
+			gasPrice = bumpGasPrice(gasPrice, txGasBumpPercent*attempt)
+		}
+
+		tx := types.NewContractCreation(
+			mustNonce(s),
+			big.NewInt(0),
+			5_000_000, // gas limit
+			gasPrice,
+			deployData,
+		)
+
+		signedTx, err = opts.Signer(opts.From, tx)
+		if err != nil {
+			return common.Address{}, errors.Errorf("signing tx: %s", err)
+		}
+
+		sendErr = s.ChainClient.SendTransaction(context.Background(), signedTx)
+		if sendErr == nil {
+			break
+		}
+		if !IsRetryableTxError(sendErr) {
+			return common.Address{}, errors.Errorf("sending deploy tx: %s", sendErr)
+		}
+		if attempt < txMaxAttempts-1 {
+			time.Sleep(txRetryDelay)
+		}
 	}
-
-	tx := types.NewContractCreation(
-		mustNonce(s),
-		big.NewInt(0),
-		5_000_000, // gas limit
-		gasPrice,
-		deployData,
-	)
-
-	signedTx, err := opts.Signer(opts.From, tx)
-	if err != nil {
-		return common.Address{}, errors.Errorf("signing tx: %s", err)
-	}
-
-	if err := s.ChainClient.SendTransaction(context.Background(), signedTx); err != nil {
-		return common.Address{}, errors.Errorf("sending deploy tx: %s", err)
+	if sendErr != nil {
+		return common.Address{}, errors.Errorf("sending deploy tx after %d attempts: %s", txMaxAttempts, sendErr)
 	}
 
 	receipt, err := support.CheckTx(signedTx, s.ChainClient)
@@ -143,18 +188,39 @@ func BalanceOfERC20(s *support.Support, token, account common.Address) (*big.Int
 }
 
 func sendERC20Tx(s *support.Support, token common.Address, method string, args ...any) error {
-	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
-	if err != nil {
-		return errors.Errorf("creating transactor: %s", err)
+	contract := bind.NewBoundContract(token, erc20ABI, s.ChainClient, s.ChainClient, s.ChainClient)
+
+	var tx *types.Transaction
+	var sendErr error
+	for attempt := 0; attempt < txMaxAttempts; attempt++ {
+		opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
+		if err != nil {
+			return errors.Errorf("creating transactor: %s", err)
+		}
+		if attempt > 0 {
+			gp, gerr := s.ChainClient.SuggestGasPrice(context.Background())
+			if gerr != nil {
+				return errors.Errorf("suggesting gas price: %s", gerr)
+			}
+			opts.GasPrice = bumpGasPrice(gp, txGasBumpPercent*attempt)
+		}
+
+		tx, sendErr = contract.Transact(opts, method, args...)
+		if sendErr == nil {
+			break
+		}
+		if !IsRetryableTxError(sendErr) {
+			return errors.Errorf("%s failed: %s", method, sendErr)
+		}
+		if attempt < txMaxAttempts-1 {
+			time.Sleep(txRetryDelay)
+		}
+	}
+	if sendErr != nil {
+		return errors.Errorf("%s failed after %d attempts: %s", method, txMaxAttempts, sendErr)
 	}
 
-	tx, err := bind.NewBoundContract(token, erc20ABI, s.ChainClient, s.ChainClient, s.ChainClient).Transact(opts, method, args...)
-	if err != nil {
-		return errors.Errorf("%s failed: %s", method, err)
-	}
-
-	_, err = support.CheckTx(tx, s.ChainClient)
-	if err != nil {
+	if _, err := support.CheckTx(tx, s.ChainClient); err != nil {
 		return errors.Errorf("%s tx failed: %s", method, err)
 	}
 
