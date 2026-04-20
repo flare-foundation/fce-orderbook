@@ -29,6 +29,8 @@ docs/superpowers
 
 notes/
 
+.worktrees/
+
 # Private deployment guide (SSH, redeploy instructions)
 DEPLOYMENT.md
 
