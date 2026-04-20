@@ -59,6 +59,7 @@ export interface OpenOrder {
   side: "buy" | "sell";
   price: number;
   remaining: number;
+  timestamp?: number;
 }
 
 export interface GetMyStateResp {
