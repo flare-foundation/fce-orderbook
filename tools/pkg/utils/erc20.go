@@ -37,7 +37,9 @@ const (
 
 // IsRetryableTxError returns true for errors that indicate a transient nonce
 // or mempool race — typical on load-balanced public RPCs where the node that
-// sees our next tx hasn't yet observed the previous one being mined.
+// sees our next tx hasn't yet observed the previous one being mined — and for
+// rate-limit (HTTP 429) errors from the RPC, which are common when many
+// concurrent stress-test runs share a public endpoint.
 // Exported for reuse by callers that wrap their own contract bindings.
 func IsRetryableTxError(err error) bool {
 	if err == nil {
@@ -47,7 +49,9 @@ func IsRetryableTxError(err error) bool {
 	return strings.Contains(msg, "replacement transaction underpriced") ||
 		strings.Contains(msg, "already known") ||
 		strings.Contains(msg, "known transaction") ||
-		strings.Contains(msg, "nonce too low")
+		strings.Contains(msg, "nonce too low") ||
+		strings.Contains(msg, "429") ||
+		strings.Contains(msg, "too many requests")
 }
 
 // bumpGasPrice returns gasPrice * (100 + pct) / 100.
@@ -142,11 +146,12 @@ func DeployTestToken(s *support.Support, artifactPath, name, symbol string) (com
 	return receipt.ContractAddress, nil
 }
 
-// erc20ABI is a minimal ERC20 ABI for mint, approve, balanceOf.
+// erc20ABI is a minimal ERC20 ABI for mint, approve, balanceOf, decimals.
 var erc20ABI = mustParseABI(`[
 	{"type":"function","name":"mint","inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"outputs":[]},
 	{"type":"function","name":"approve","inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],"outputs":[{"name":"","type":"bool"}]},
-	{"type":"function","name":"balanceOf","inputs":[{"name":"","type":"address"}],"outputs":[{"name":"","type":"uint256"}]}
+	{"type":"function","name":"balanceOf","inputs":[{"name":"","type":"address"}],"outputs":[{"name":"","type":"uint256"}]},
+	{"type":"function","name":"decimals","inputs":[],"outputs":[{"name":"","type":"uint8"}]}
 ]`)
 
 func mustParseABI(raw string) abi.ABI {
@@ -165,6 +170,26 @@ func MintERC20(s *support.Support, token, to common.Address, amount *big.Int) er
 // ApproveERC20 calls approve(spender, amount) on an ERC20 contract.
 func ApproveERC20(s *support.Support, token, spender common.Address, amount *big.Int) error {
 	return sendERC20Tx(s, token, "approve", spender, amount)
+}
+
+// DecimalsERC20 calls decimals() on an ERC20 contract.
+func DecimalsERC20(s *support.Support, token common.Address) (uint8, error) {
+	callData, err := erc20ABI.Pack("decimals")
+	if err != nil {
+		return 0, errors.Errorf("packing decimals: %s", err)
+	}
+
+	result, err := s.ChainClient.CallContract(context.Background(), toCallMsg(token, callData), nil)
+	if err != nil {
+		return 0, errors.Errorf("calling decimals: %s", err)
+	}
+
+	values, err := erc20ABI.Unpack("decimals", result)
+	if err != nil {
+		return 0, errors.Errorf("unpacking decimals: %s", err)
+	}
+
+	return values[0].(uint8), nil
 }
 
 // BalanceOfERC20 calls balanceOf(account) on an ERC20 contract.
