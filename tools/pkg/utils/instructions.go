@@ -109,32 +109,47 @@ func Deposit(s *support.Support, instructionSenderAddress common.Address, token 
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to bind contract: %s", err)
 	}
 
-	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
-	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to create transactor: %s", err)
-	}
-	opts.Value = big.NewInt(1000000) // Instruction fee in wei
+	// Retry on transient/rate-limit errors. IsRetryableTxError also matches
+	// HTTP 429 now, so this survives bursts against a shared public RPC.
+	var tx *types.Transaction
+	var sendErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
+		if err != nil {
+			return common.Hash{}, common.Hash{}, errors.Errorf("failed to create transactor: %s", err)
+		}
+		opts.Value = big.NewInt(1000000) // Instruction fee in wei
 
-	tx, err := sender.Deposit(opts, token, amount)
-	if err != nil {
-		reason := fccutils.DecodeRevertReason(err)
-		if reason == "" {
-			parsed, _ := orderbook.OrderbookInstructionSenderMetaData.GetAbi()
-			if parsed != nil {
-				callData, packErr := parsed.Pack("deposit", token, amount)
-				if packErr == nil {
-					from := crypto.PubkeyToAddress(s.Prv.PublicKey)
-					reason = fccutils.SimulateAndDecodeRevert(
-						s.ChainClient, from, instructionSenderAddress,
-						big.NewInt(1000000), callData,
-					)
+		tx, sendErr = sender.Deposit(opts, token, amount)
+		if sendErr == nil {
+			break
+		}
+		if !IsRetryableTxError(sendErr) {
+			reason := fccutils.DecodeRevertReason(sendErr)
+			if reason == "" {
+				parsed, _ := orderbook.OrderbookInstructionSenderMetaData.GetAbi()
+				if parsed != nil {
+					callData, packErr := parsed.Pack("deposit", token, amount)
+					if packErr == nil {
+						from := crypto.PubkeyToAddress(s.Prv.PublicKey)
+						reason = fccutils.SimulateAndDecodeRevert(
+							s.ChainClient, from, instructionSenderAddress,
+							big.NewInt(1000000), callData,
+						)
+					}
 				}
 			}
+			if reason != "" {
+				return common.Hash{}, common.Hash{}, errors.Errorf("failed to send deposit: %s (revert reason: %s)", sendErr, reason)
+			}
+			return common.Hash{}, common.Hash{}, errors.Errorf("failed to send deposit: %s", sendErr)
 		}
-		if reason != "" {
-			return common.Hash{}, common.Hash{}, errors.Errorf("failed to send deposit: %s (revert reason: %s)", err, reason)
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
 		}
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send deposit: %s", err)
+	}
+	if sendErr != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send deposit after retries: %s", sendErr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -176,15 +191,29 @@ func Withdraw(s *support.Support, instructionSenderAddress common.Address, token
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to bind contract: %s", err)
 	}
 
-	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
-	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to create transactor: %s", err)
-	}
-	opts.Value = big.NewInt(1000000) // Instruction fee in wei
+	// Retry on transient/rate-limit errors (see Deposit for rationale).
+	var tx *types.Transaction
+	var sendErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
+		if err != nil {
+			return common.Hash{}, common.Hash{}, errors.Errorf("failed to create transactor: %s", err)
+		}
+		opts.Value = big.NewInt(1000000) // Instruction fee in wei
 
-	tx, err := sender.Withdraw(opts, token, amount, to)
-	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send withdraw: %s", err)
+		tx, sendErr = sender.Withdraw(opts, token, amount, to)
+		if sendErr == nil {
+			break
+		}
+		if !IsRetryableTxError(sendErr) {
+			return common.Hash{}, common.Hash{}, errors.Errorf("failed to send withdraw: %s", sendErr)
+		}
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+		}
+	}
+	if sendErr != nil {
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send withdraw after retries: %s", sendErr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
