@@ -23,6 +23,7 @@ import (
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/stress"
 	"extension-scaffold/tools/pkg/support"
+	instrutils "extension-scaffold/tools/pkg/utils"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
@@ -41,10 +42,13 @@ func main() {
 	keysFileF := flag.String("keys", "./traders.json", "trader keys cache")
 	fundPerTraderF := flag.String("fund-per-trader", "50000000000000000", "native wei per trader (default 0.05 FLR)")
 	fundMinF := flag.String("fund-min", "10000000000000000", "top up if below this (default 0.01 FLR)")
-	mintAmountF := flag.Uint64("mint", 1_000_000, "tokens to mint per trader")
-	depositAmountF := flag.Uint64("deposit", 10_000, "tokens to deposit per trader (both sides)")
+	mintAmountF := flag.Uint64("mint", 1_000_000, "human tokens to mint per trader per token (scaled by decimals())")
+	depositAmountF := flag.Uint64("deposit", 100_000, "human tokens to deposit per trader per token (scaled by decimals())")
 	pairF := flag.String("pair", "FLR/USDT", "trading pair")
 	logFileF := flag.String("log-file", "", "if set, duplicate all log output to this file (for tail -f on long runs)")
+	priceSymbolF := flag.String("price-symbol", "", "CoinGecko asset id (e.g. bitcoin, ethereum); overrides tier's PriceSymbol")
+	priceIntervalF := flag.Duration("price-interval", 60*time.Second, "price-oracle poll interval (clamped to >=30s)")
+	priceVsCurrencyF := flag.String("price-vs-currency", "usd", "CoinGecko vs_currencies param")
 	flag.Parse()
 
 	if *instructionSenderF == "" {
@@ -102,6 +106,22 @@ func main() {
 		fccutils.FatalWithCause(err)
 	}
 
+	// --- Query token decimals so every human-unit amount below can be scaled
+	// to the raw integer units the TEE and ERC20 contracts expect. Matches
+	// frontend/src/hooks/usePlaceOrder.ts; without this, orders placed by the
+	// stress test round to 0 in the UI. ---
+	baseDecimals, err := instrutils.DecimalsERC20(funder, baseToken)
+	if err != nil {
+		fccutils.FatalWithCause(fmt.Errorf("reading base token decimals: %w", err))
+	}
+	quoteDecimals, err := instrutils.DecimalsERC20(funder, quoteToken)
+	if err != nil {
+		fccutils.FatalWithCause(fmt.Errorf("reading quote token decimals: %w", err))
+	}
+	scaling := stress.Scaling{BaseDecimals: baseDecimals, QuoteDecimals: quoteDecimals}
+	logger.Infof("scaling: base_decimals=%d quote_decimals=%d price_precision=%d",
+		baseDecimals, quoteDecimals, stress.PricePrecision)
+
 	// --- Build Trader objects ---
 	traders := make([]*stress.Trader, totalTraders)
 	for i := 0; i < totalTraders; i++ {
@@ -130,17 +150,39 @@ func main() {
 		InstructionSender: instructionSender,
 		QuoteToken:        quoteToken,
 		BaseToken:         baseToken,
-		MintAmount:        *mintAmountF,
-		ApproveAmount:     *mintAmountF,
-		DepositAmount:     *depositAmountF,
+		Scaling:           scaling,
+		MintHuman:         *mintAmountF,
+		ApproveHuman:      *mintAmountF,
+		DepositHuman:      *depositAmountF,
 		Concurrency:       8,
 	}
 	if err := stress.BootstrapTraders(traders, bcfg); err != nil {
 		fccutils.FatalWithCause(err)
 	}
 
+	// --- Optional price oracle (CoinGecko) ---
+	// CLI flag overrides the tier's PriceSymbol; pass -price-symbol="" to
+	// force a tier like btc-day into static pricing for tests.
+	priceSymbol := tier.PriceSymbol
+	if *priceSymbolF != "" {
+		priceSymbol = *priceSymbolF
+	}
+	oracleCtx, oracleCancel := context.WithCancel(context.Background())
+	defer oracleCancel()
+	var oracle stress.PriceOracle
+	if priceSymbol != "" {
+		o, err := stress.NewCoinGeckoOracle(oracleCtx, stress.CoinGeckoConfig{
+			Symbol: priceSymbol, VsCurrency: *priceVsCurrencyF,
+			Interval: *priceIntervalF, Scaling: scaling,
+		})
+		if err != nil {
+			fccutils.FatalWithCause(fmt.Errorf("price oracle: %w", err))
+		}
+		oracle = o
+	}
+
 	// --- Build assignments from tier config ---
-	assignments := BuildAssignments(tier, traders, *pairF, tier.Duration)
+	assignments := BuildAssignments(tier, traders, *pairF, tier.Duration, scaling, oracle)
 	if len(assignments) == 0 {
 		fccutils.FatalWithCause(fmt.Errorf("no assignments — check persona mix"))
 	}
