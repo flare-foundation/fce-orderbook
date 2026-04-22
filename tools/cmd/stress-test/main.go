@@ -120,6 +120,10 @@ func main() {
 		fccutils.FatalWithCause(err)
 	}
 
+	// --- Cleanup stale open orders from any interrupted previous run ---
+	logger.Infof("cleanup: checking for stale open orders on %d traders...", totalTraders)
+	stress.CleanupOpenOrders(traders, *pf)
+
 	// --- Bootstrap (mint + approve + deposit) ---
 	logger.Infof("bootstrapping %d traders (mint+approve+deposit)...", totalTraders)
 	bcfg := stress.BootstrapConfig{

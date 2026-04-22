@@ -35,18 +35,57 @@ type MarketMakerConfig struct {
 	Refresh  time.Duration
 }
 
-type marketMaker struct{ cfg MarketMakerConfig; flip bool }
+type marketMaker struct {
+	cfg      MarketMakerConfig
+	phase    int    // 0,1 = initial place-buy / place-sell; then alternating cancel/place
+	nextSide string // which side the next steady-state place will use
+}
 
 func NewMarketMaker(cfg MarketMakerConfig) Persona { return &marketMaker{cfg: cfg} }
 func (m *marketMaker) Name() string { return "market_maker" }
+
+// NextAction implements a requote cycle so the MM never accumulates stale quotes:
+//   phase 0 → place buy
+//   phase 1 → place sell      (book now has one bid + one ask from this MM)
+//   phase 2 → cancel oldest
+//   phase 3 → place (alternating side)
+//   phase 4 → cancel oldest
+//   phase 5 → place (alternating side)
+//   ...
+// Steady-state resting-order count stays at 1–2 regardless of run length.
 func (m *marketMaker) NextAction(r *rand.Rand) Action {
+	switch m.phase {
+	case 0:
+		m.phase = 1
+		m.nextSide = "buy" // after startup, first steady-state place is a fresh buy
+		return m.buildPlace(r, "buy")
+	case 1:
+		m.phase = 2
+		return m.buildPlace(r, "sell")
+	}
+	if m.phase%2 == 0 {
+		// cancel the oldest tracked order
+		m.phase++
+		return Action{Kind: "cancel", Pair: m.cfg.Pair}
+	}
+	// odd steady-state phase: place, alternating side
+	side := m.nextSide
+	if side == "buy" {
+		m.nextSide = "sell"
+	} else {
+		m.nextSide = "buy"
+	}
+	m.phase++
+	return m.buildPlace(r, side)
+}
+
+func (m *marketMaker) buildPlace(r *rand.Rand, side string) Action {
 	half := m.cfg.Spread / 2
-	m.flip = !m.flip
-	side := "buy"
-	price := m.cfg.MidPrice - half - uint64(r.Intn(int(half)+1))
-	if m.flip {
-		side = "sell"
+	var price uint64
+	if side == "sell" {
 		price = m.cfg.MidPrice + half + uint64(r.Intn(int(half)+1))
+	} else {
+		price = m.cfg.MidPrice - half - uint64(r.Intn(int(half)+1))
 	}
 	qty := m.cfg.QtyMin + uint64(r.Intn(int(m.cfg.QtyMax-m.cfg.QtyMin+1)))
 	return Action{Kind: "place", Pair: m.cfg.Pair, Side: side, Type: "limit", Price: price, Quantity: qty}

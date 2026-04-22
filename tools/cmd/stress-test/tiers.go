@@ -56,10 +56,14 @@ func tierByName(name string) (Tier, error) {
 		// (~10 orders/min) and all traders Persistent so the run continues until
 		// SIGTERM/SIGINT. Balance-neutral by design (MMs post both sides, takers
 		// cross both sides), so traders don't drift toward zero over hours.
+		//
+		// Walker bounds are tight (±1% of mid) so its limit orders can't sit
+		// deep out-of-band if a run crashes before sweep completes — prevents
+		// a stale bargain-priced order pool from polluting later runs.
 		return Tier{
 			Name: "day", Mix: PersonaMix{2, 2, 1, 0, 0},
 			Duration: 0, BaseMid: 100_000, BaseSpread: 2_000,
-			WalkerLow: 90_000, WalkerHigh: 110_000,
+			WalkerLow: 99_000, WalkerHigh: 101_000,
 			MMRefresh: 20 * time.Second, TakerPause: 45 * time.Second, WalkerPause: 60 * time.Second,
 		}, nil
 	default:
