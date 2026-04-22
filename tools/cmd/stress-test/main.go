@@ -6,6 +6,7 @@
 //
 //	go run ./cmd/stress-test -tier=L2 -instructionSender=0x... -duration=5m
 //	go run ./cmd/stress-test -tier=L3 -duration=0                 # perpetual
+//	go run ./cmd/stress-test -tier=day -log-file=/tmp/soak.log    # multi-hour soak
 package main
 
 import (
@@ -43,11 +44,17 @@ func main() {
 	mintAmountF := flag.Uint64("mint", 1_000_000, "tokens to mint per trader")
 	depositAmountF := flag.Uint64("deposit", 10_000, "tokens to deposit per trader (both sides)")
 	pairF := flag.String("pair", "FLR/USDT", "trading pair")
+	logFileF := flag.String("log-file", "", "if set, duplicate all log output to this file (for tail -f on long runs)")
 	flag.Parse()
 
 	if *instructionSenderF == "" {
 		fmt.Fprintln(os.Stderr, "--instructionSender is required")
 		os.Exit(1)
+	}
+
+	if *logFileF != "" {
+		logger.Set(logger.Config{Level: "INFO", Console: true, File: *logFileF})
+		logger.Infof("logging to %s", *logFileF)
 	}
 
 	_ = godotenv.Load("../config/test-tokens.env")
@@ -140,20 +147,26 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sig
-		logger.Infof("SIGINT received — cancelling all traders")
+		s := <-sig
+		logger.Infof("%s received — cancelling all traders", s)
 		cancel()
 	}()
 
-	// Periodic metrics reporter.
-	reportTicker := time.NewTicker(30 * time.Second)
-	defer reportTicker.Stop()
+	// Periodic metrics reporters:
+	//   - Compact one-liner every 60s: tight, scannable in a long log file.
+	//   - Full per-action snapshot every 5 min: for deeper inspection.
+	compactTicker := time.NewTicker(60 * time.Second)
+	verboseTicker := time.NewTicker(5 * time.Minute)
+	defer compactTicker.Stop()
+	defer verboseTicker.Stop()
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-reportTicker.C:
+			case <-compactTicker.C:
+				printCompact(metrics.Snapshot())
+			case <-verboseTicker.C:
 				printSnapshot(metrics.Snapshot())
 			}
 		}
@@ -187,4 +200,29 @@ func printSnapshot(s stress.MetricsSnapshot) {
 		logger.Infof("  %-14s count=%d p50=%s p95=%s p99=%s errors=%v (rate=%.3f)",
 			action, st.Count, st.P50, st.P95, st.P99, st.Errors, st.ErrorRate)
 	}
+}
+
+// printCompact emits a single line summarizing each action — meant for hours-
+// long soak runs where verbose snapshots clutter the log.
+func printCompact(s stress.MetricsSnapshot) {
+	if len(s.Actions) == 0 {
+		return
+	}
+	parts := make([]string, 0, len(s.Actions))
+	for action, st := range s.Actions {
+		parts = append(parts, fmt.Sprintf("%s[ok=%d p50=%s p95=%s err=%.0f%%]",
+			action, st.Count, st.P50.Round(time.Millisecond), st.P95.Round(time.Millisecond), st.ErrorRate*100))
+	}
+	logger.Infof("status %s", joinParts(parts))
+}
+
+func joinParts(parts []string) string {
+	out := ""
+	for i, p := range parts {
+		if i > 0 {
+			out += " | "
+		}
+		out += p
+	}
+	return out
 }
