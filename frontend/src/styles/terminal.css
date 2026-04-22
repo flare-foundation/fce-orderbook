@@ -1,5 +1,5 @@
 /* ============================================================
-   LEDGER — Terminal Design System
+   FLARE — Terminal Design System
    ============================================================ */
 
 /* === Layout === */
@@ -70,6 +70,33 @@
 .hdr-nav button:hover:not(:disabled) { color: var(--fg); }
 .hdr-nav button.active { color: var(--fg); border-bottom-color: var(--accent); }
 .hdr-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.hdr-pairs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+.hdr-pair {
+  padding: 4px 10px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+.hdr-pair:hover { color: var(--fg); border-color: var(--fg-mute); }
+.hdr-pair.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: transparent;
+}
 
 .hdr-chips {
   display: flex;
@@ -1051,16 +1078,19 @@
   font-size: 9px;
   letter-spacing: 0.1em;
   padding: 2px 6px;
-  color: var(--fg-mute);
+  color: var(--fg-dim);
   background: transparent;
   border: 1px solid transparent;
-  cursor: default;
+  cursor: pointer;
   font-family: var(--f-mono);
-  opacity: 0.6;
+  transition: color 80ms linear, border-color 80ms linear, background 80ms linear;
+}
+.chart-tfs button:hover {
+  color: var(--fg);
+  border-color: var(--line-2);
 }
 .chart-tfs button.active {
   color: var(--fg);
-  border-color: var(--line-2);
+  border-color: var(--accent);
   background: var(--bg-2);
-  opacity: 1;
 }
