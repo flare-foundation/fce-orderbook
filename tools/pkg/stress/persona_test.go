@@ -17,8 +17,13 @@ func TestMarketMaker_PlacesBothSides(t *testing.T) {
 	r := rand.New(rand.NewSource(1))
 
 	actions := make(map[string]int)
-	for i := 0; i < 20; i++ {
+	cancels := 0
+	for i := 0; i < 40; i++ {
 		act := p.NextAction(r)
+		if act.Kind == "cancel" {
+			cancels++
+			continue
+		}
 		actions[act.Side]++
 		if act.Pair != "FLR/USDT" {
 			t.Fatalf("wrong pair: %s", act.Pair)
@@ -32,6 +37,39 @@ func TestMarketMaker_PlacesBothSides(t *testing.T) {
 	}
 	if actions["buy"] == 0 || actions["sell"] == 0 {
 		t.Fatalf("market maker must place both sides, got %v", actions)
+	}
+	if cancels == 0 {
+		t.Fatalf("expected some cancels from the requote cycle, got 0")
+	}
+}
+
+// TestMarketMaker_RequoteKeepsCountBounded verifies the requote cycle produces
+// a place/cancel pattern that bounds resting-order count at 1–2 — not a
+// monotonically growing set of stale quotes.
+func TestMarketMaker_RequoteKeepsCountBounded(t *testing.T) {
+	p := NewMarketMaker(MarketMakerConfig{
+		Pair: "FLR/USDT", MidPrice: 100_000, Spread: 2_000, QtyMin: 1, QtyMax: 1,
+	})
+	r := rand.New(rand.NewSource(42))
+
+	resting := 0
+	maxResting := 0
+	for i := 0; i < 100; i++ {
+		act := p.NextAction(r)
+		switch act.Kind {
+		case "place":
+			resting++
+		case "cancel":
+			if resting > 0 {
+				resting--
+			}
+		}
+		if resting > maxResting {
+			maxResting = resting
+		}
+	}
+	if maxResting > 2 {
+		t.Fatalf("resting-order count grew above 2 (got %d) — requote cycle broken", maxResting)
 	}
 }
 
