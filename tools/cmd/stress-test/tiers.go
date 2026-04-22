@@ -22,15 +22,21 @@ func (m PersonaMix) Total() int {
 	return m.MarketMakers + m.AggressiveTakers + m.RandomWalkers + m.Whales + m.Flickers
 }
 
-// Tier bundles the stock configurations.
+// Tier bundles the stock configurations. Per-persona cadence fields default
+// to zero, in which case each persona uses its own fast built-in default —
+// tune them only for the "day" soak profile where longer pauses matter.
 type Tier struct {
-	Name       string
-	Mix        PersonaMix
-	Duration   time.Duration
-	BaseMid    uint64
-	BaseSpread uint64
-	WalkerLow  uint64
-	WalkerHigh uint64
+	Name        string
+	Mix         PersonaMix
+	Duration    time.Duration
+	BaseMid     uint64
+	BaseSpread  uint64
+	WalkerLow   uint64
+	WalkerHigh  uint64
+	MMRefresh   time.Duration // 0 = persona default (2s)
+	TakerPause  time.Duration // 0 = persona default (500ms)
+	WalkerPause time.Duration // 0 = persona default (500ms-2s random)
+	WhalePause  time.Duration // 0 = persona default (30s)
 }
 
 func tierByName(name string) (Tier, error) {
@@ -45,8 +51,19 @@ func tierByName(name string) (Tier, error) {
 		return Tier{Name: "L4", Mix: PersonaMix{10, 60, 100, 20, 10}, Duration: 15 * time.Minute, BaseMid: 100_000, BaseSpread: 5_000, WalkerLow: 50_000, WalkerHigh: 150_000}, nil
 	case "L5":
 		return Tier{Name: "L5", Mix: PersonaMix{20, 150, 250, 50, 30}, Duration: 30 * time.Second, BaseMid: 100_000, BaseSpread: 10_000, WalkerLow: 20_000, WalkerHigh: 180_000}, nil
+	case "DAY":
+		// Soak profile: simulate a quiet but active trading day. Low throughput
+		// (~10 orders/min) and all traders Persistent so the run continues until
+		// SIGTERM/SIGINT. Balance-neutral by design (MMs post both sides, takers
+		// cross both sides), so traders don't drift toward zero over hours.
+		return Tier{
+			Name: "day", Mix: PersonaMix{2, 2, 1, 0, 0},
+			Duration: 0, BaseMid: 100_000, BaseSpread: 2_000,
+			WalkerLow: 90_000, WalkerHigh: 110_000,
+			MMRefresh: 20 * time.Second, TakerPause: 45 * time.Second, WalkerPause: 60 * time.Second,
+		}, nil
 	default:
-		return Tier{}, fmt.Errorf("unknown tier %q (want L1..L5)", name)
+		return Tier{}, fmt.Errorf("unknown tier %q (want L1..L5, day)", name)
 	}
 }
 
@@ -99,17 +116,21 @@ func BuildAssignments(tier Tier, traders []*stress.Trader, pair string, duration
 	if duration == 0 {
 		mkRole = stress.Persistent
 	}
+	mmRefresh := tier.MMRefresh
+	if mmRefresh == 0 {
+		mmRefresh = 3 * time.Second
+	}
 	add(tier.Mix.MarketMakers, stress.NewMarketMaker(stress.MarketMakerConfig{
-		Pair: pair, MidPrice: tier.BaseMid, Spread: tier.BaseSpread, QtyMin: 1, QtyMax: 5, Refresh: 3 * time.Second,
+		Pair: pair, MidPrice: tier.BaseMid, Spread: tier.BaseSpread, QtyMin: 1, QtyMax: 5, Refresh: mmRefresh,
 	}), stress.Persistent)
 	add(tier.Mix.AggressiveTakers, stress.NewAggressiveTaker(stress.TakerConfig{
-		Pair: pair, QtyMin: 1, QtyMax: 3,
+		Pair: pair, QtyMin: 1, QtyMax: 3, Pause: tier.TakerPause,
 	}), mkRole)
 	add(tier.Mix.RandomWalkers, stress.NewRandomWalker(stress.WalkerConfig{
-		Pair: pair, PriceMin: tier.WalkerLow, PriceMax: tier.WalkerHigh, QtyMin: 1, QtyMax: 10,
+		Pair: pair, PriceMin: tier.WalkerLow, PriceMax: tier.WalkerHigh, QtyMin: 1, QtyMax: 10, Pause: tier.WalkerPause,
 	}), mkRole)
 	add(tier.Mix.Whales, stress.NewWhale(stress.WhaleConfig{
-		Pair: pair, QtyMin: 50, QtyMax: 200, Price: tier.BaseMid,
+		Pair: pair, QtyMin: 50, QtyMax: 200, Price: tier.BaseMid, Pause: tier.WhalePause,
 	}), mkRole)
 	add(tier.Mix.Flickers, stress.NewFlicker(stress.FlickerConfig{
 		Pair: pair, MidPrice: tier.BaseMid, Spread: tier.BaseSpread, QtyMin: 1, QtyMax: 3,

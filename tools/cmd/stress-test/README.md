@@ -36,16 +36,30 @@ withdrawals.
 
 ## Tiers
 
-| Tier | MM | Taker | Walker | Whale | Flicker | Total | Duration |
-|------|----|-------|--------|-------|---------|-------|----------|
-| L1   | 1  | 1     | 1      | 0     | 0       | 3     | 60s      |
-| L2   | 2  | 3     | 4      | 1     | 0       | 10    | 5m       |
-| L3   | 5  | 15    | 25     | 3     | 2       | 50    | 10m      |
-| L4   | 10 | 60    | 100    | 20    | 10      | 200   | 15m      |
-| L5   | 20 | 150   | 250    | 50    | 30      | 500   | 30s      |
+| Tier | MM | Taker | Walker | Whale | Flicker | Total | Duration | Cadence |
+|------|----|-------|--------|-------|---------|-------|----------|---------|
+| L1   | 1  | 1     | 1      | 0     | 0       | 3     | 60s      | fast    |
+| L2   | 2  | 3     | 4      | 1     | 0       | 10    | 5m       | fast    |
+| L3   | 5  | 15    | 25     | 3     | 2       | 50    | 10m      | fast    |
+| L4   | 10 | 60    | 100    | 20    | 10      | 200   | 15m      | fast    |
+| L5   | 20 | 150   | 250    | 50    | 30      | 500   | 30s      | fast    |
+| day  | 2  | 2     | 1      | 0     | 0       | 5     | until SIGTERM | slow (MM 20s / taker 45s / walker 60s) |
+
+**Stress tiers (L1–L5)** — throughput / contention testing.
+**Soak tier (day)** — long-running consistent activity. ~10 orders/min, balance-neutral by design, runs until SIGTERM. Use for multi-hour correctness checks.
 
 **Persistent trader rule:** every market-maker is Persistent. With
-`-duration=0`, every trader is Persistent. Ctrl+C always triggers the sweep.
+`-duration=0` (or `-tier=day`), every trader is Persistent. Ctrl+C always triggers the sweep.
+
+## Log file (long runs)
+
+Use `-log-file=path` to duplicate all output to a file; console output is preserved. Lets you `tail -f path` from another terminal without worrying about pipe buffering:
+
+    go run ./cmd/stress-test -tier=day \
+      -instructionSender=0x... \
+      -log-file=/tmp/soak-$(date +%Y%m%d-%H%M%S).log
+
+One-line compact status is emitted every 60s, full per-action snapshot every 5 min.
 
 ## Personas
 
