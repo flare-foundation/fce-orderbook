@@ -26,13 +26,20 @@ type Persona interface {
 
 // --- Market maker: posts both sides of the book around a mid. Always limit. ---
 
+// MarketMakerConfig. If Oracle is set, each NextAction reads the live mid from
+// it and — when SpreadBps > 0 — computes the spread as a percentage of that
+// live mid (mid * SpreadBps / 10000). This lets an MM track a moving market
+// without restarting. When Oracle is nil, static MidPrice + absolute Spread
+// are used (the original behavior).
 type MarketMakerConfig struct {
-	Pair     string
-	MidPrice uint64
-	Spread   uint64
-	QtyMin   uint64
-	QtyMax   uint64
-	Refresh  time.Duration
+	Pair      string
+	MidPrice  uint64
+	Spread    uint64 // absolute; used when SpreadBps == 0 or Oracle is nil
+	SpreadBps uint64 // relative; used when > 0 and Oracle is set
+	QtyMin    uint64
+	QtyMax    uint64
+	Refresh   time.Duration
+	Oracle    PriceOracle
 }
 
 type marketMaker struct {
@@ -80,15 +87,36 @@ func (m *marketMaker) NextAction(r *rand.Rand) Action {
 }
 
 func (m *marketMaker) buildPlace(r *rand.Rand, side string) Action {
-	half := m.cfg.Spread / 2
+	mid, spread := resolveMidSpread(m.cfg.Oracle, m.cfg.MidPrice, m.cfg.Spread, m.cfg.SpreadBps)
+	half := spread / 2
 	var price uint64
 	if side == "sell" {
-		price = m.cfg.MidPrice + half + uint64(r.Intn(int(half)+1))
+		price = mid + half + uint64(r.Intn(int(half)+1))
 	} else {
-		price = m.cfg.MidPrice - half - uint64(r.Intn(int(half)+1))
+		price = mid - half - uint64(r.Intn(int(half)+1))
 	}
 	qty := m.cfg.QtyMin + uint64(r.Intn(int(m.cfg.QtyMax-m.cfg.QtyMin+1)))
 	return Action{Kind: "place", Pair: m.cfg.Pair, Side: side, Type: "limit", Price: price, Quantity: qty}
+}
+
+// resolveMidSpread picks the live mid/spread if an oracle is wired in,
+// otherwise falls back to the static pair. Kept as a package-level helper so
+// MM and Flicker share one definition.
+func resolveMidSpread(oracle PriceOracle, staticMid, staticSpread, spreadBps uint64) (mid, spread uint64) {
+	mid = staticMid
+	spread = staticSpread
+	if oracle != nil {
+		if live := oracle.Mid(); live > 0 {
+			mid = live
+		}
+		if spreadBps > 0 {
+			spread = mid * spreadBps / 10000
+			if spread == 0 {
+				spread = 1 // never produce a zero spread
+			}
+		}
+	}
+	return mid, spread
 }
 func (m *marketMaker) PauseAfter(r *rand.Rand) time.Duration {
 	if m.cfg.Refresh == 0 {
@@ -123,11 +151,17 @@ func (t *taker) PauseAfter(r *rand.Rand) time.Duration {
 
 // --- Random walker: any side, any type, random price within bounds. ---
 
+// WalkerConfig. If Oracle is set and LowBps/HighBps > 0, the price bounds are
+// computed around the live mid each call: [mid * (10000-LowBps) / 10000,
+// mid * (10000+HighBps) / 10000]. Otherwise the static PriceMin/PriceMax are
+// used verbatim.
 type WalkerConfig struct {
-	Pair             string
+	Pair               string
 	PriceMin, PriceMax uint64
-	QtyMin, QtyMax   uint64
-	Pause            time.Duration
+	LowBps, HighBps    uint64 // used with Oracle; e.g. 100 = 1%
+	QtyMin, QtyMax     uint64
+	Pause              time.Duration
+	Oracle             PriceOracle
 }
 
 type walker struct{ cfg WalkerConfig }
@@ -146,7 +180,17 @@ func (w *walker) NextAction(r *rand.Rand) Action {
 	qty := w.cfg.QtyMin + uint64(r.Intn(int(w.cfg.QtyMax-w.cfg.QtyMin+1)))
 	a := Action{Kind: "place", Pair: w.cfg.Pair, Side: side, Type: typ, Quantity: qty}
 	if typ == "limit" {
-		a.Price = w.cfg.PriceMin + uint64(r.Intn(int(w.cfg.PriceMax-w.cfg.PriceMin+1)))
+		lo, hi := w.cfg.PriceMin, w.cfg.PriceMax
+		if w.cfg.Oracle != nil && w.cfg.LowBps > 0 && w.cfg.HighBps > 0 {
+			if live := w.cfg.Oracle.Mid(); live > 0 {
+				lo = live * (10000 - w.cfg.LowBps) / 10000
+				hi = live * (10000 + w.cfg.HighBps) / 10000
+			}
+		}
+		if hi <= lo {
+			hi = lo + 1
+		}
+		a.Price = lo + uint64(r.Intn(int(hi-lo+1)))
 	}
 	return a
 }
@@ -159,7 +203,15 @@ func (w *walker) PauseAfter(r *rand.Rand) time.Duration {
 
 // --- Whale: occasional large orders. ---
 
-type WhaleConfig struct{ Pair string; QtyMin, QtyMax uint64; Price uint64; Pause time.Duration }
+// WhaleConfig. Price is unused for market orders but kept for symmetry.
+// Oracle, if set, is informational only (whale uses market orders).
+type WhaleConfig struct {
+	Pair           string
+	QtyMin, QtyMax uint64
+	Price          uint64
+	Pause          time.Duration
+	Oracle         PriceOracle
+}
 
 type whale struct{ cfg WhaleConfig }
 
@@ -182,7 +234,13 @@ func (w *whale) PauseAfter(r *rand.Rand) time.Duration {
 
 // --- Flicker: places then cancels quickly. ---
 
-type FlickerConfig struct{ Pair string; MidPrice, Spread, QtyMin, QtyMax uint64; Pause time.Duration }
+type FlickerConfig struct {
+	Pair                                  string
+	MidPrice, Spread, QtyMin, QtyMax      uint64
+	SpreadBps                             uint64
+	Pause                                 time.Duration
+	Oracle                                PriceOracle
+}
 
 type flicker struct{ cfg FlickerConfig; lastPlace bool }
 
@@ -193,12 +251,13 @@ func (f *flicker) NextAction(r *rand.Rand) Action {
 	if !f.lastPlace {
 		return Action{Kind: "cancel", Pair: f.cfg.Pair}
 	}
+	mid, spread := resolveMidSpread(f.cfg.Oracle, f.cfg.MidPrice, f.cfg.Spread, f.cfg.SpreadBps)
 	side := "buy"
-	half := f.cfg.Spread / 2
-	price := f.cfg.MidPrice - half - uint64(r.Intn(int(half)+1))
+	half := spread / 2
+	price := mid - half - uint64(r.Intn(int(half)+1))
 	if r.Intn(2) == 0 {
 		side = "sell"
-		price = f.cfg.MidPrice + half + uint64(r.Intn(int(half)+1))
+		price = mid + half + uint64(r.Intn(int(half)+1))
 	}
 	qty := f.cfg.QtyMin + uint64(r.Intn(int(f.cfg.QtyMax-f.cfg.QtyMin+1)))
 	return Action{Kind: "place", Pair: f.cfg.Pair, Side: side, Type: "limit", Price: price, Quantity: qty}

@@ -36,17 +36,19 @@ withdrawals.
 
 ## Tiers
 
-| Tier | MM | Taker | Walker | Whale | Flicker | Total | Duration | Cadence |
-|------|----|-------|--------|-------|---------|-------|----------|---------|
-| L1   | 1  | 1     | 1      | 0     | 0       | 3     | 60s      | fast    |
-| L2   | 2  | 3     | 4      | 1     | 0       | 10    | 5m       | fast    |
-| L3   | 5  | 15    | 25     | 3     | 2       | 50    | 10m      | fast    |
-| L4   | 10 | 60    | 100    | 20    | 10      | 200   | 15m      | fast    |
-| L5   | 20 | 150   | 250    | 50    | 30      | 500   | 30s      | fast    |
-| day  | 2  | 2     | 1      | 0     | 0       | 5     | until SIGTERM | slow (MM 20s / taker 45s / walker 60s) |
+| Tier    | MM | Taker | Walker | Whale | Flicker | Total | Duration | Mid pricing |
+|---------|----|-------|--------|-------|---------|-------|----------|-------------|
+| L1      | 1  | 1     | 1      | 0     | 0       | 3     | 60s      | static 100  |
+| L2      | 2  | 3     | 4      | 1     | 0       | 10    | 5m       | static 100  |
+| L3      | 5  | 15    | 25     | 3     | 2       | 50    | 10m      | static 100  |
+| L4      | 10 | 60    | 100    | 20    | 10      | 200   | 15m      | static 100  |
+| L5      | 20 | 150   | 250    | 50    | 30      | 500   | 30s      | static 100  |
+| day     | 2  | 2     | 1      | 0     | 0       | 5     | SIGTERM  | static 100  |
+| btc-day | 2  | 2     | 1      | 0     | 0       | 5     | SIGTERM  | **live BTC/USD via CoinGecko** |
+| eth-day | 2  | 2     | 1      | 0     | 0       | 5     | SIGTERM  | **live ETH/USD via CoinGecko** |
 
 **Stress tiers (L1–L5)** — throughput / contention testing.
-**Soak tier (day)** — long-running consistent activity. ~10 orders/min, balance-neutral by design, runs until SIGTERM. Use for multi-hour correctness checks.
+**Soak tiers (day, btc-day, eth-day)** — long-running consistent activity. ~10 orders/min, runs until SIGTERM. `btc-day` / `eth-day` pull live prices from CoinGecko (polled every 60s by default; `-price-interval=…`). MM spread is ±1% of the live mid; walker bounds are the same. Qty sizing: 0.005–0.1 BTC, 0.1–1 ETH, so a default $100k deposit covers many hours.
 
 **Persistent trader rule:** every market-maker is Persistent. With
 `-duration=0` (or `-tier=day`), every trader is Persistent. Ctrl+C always triggers the sweep.
