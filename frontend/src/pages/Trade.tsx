@@ -5,6 +5,7 @@ import { Chart } from '../components/Chart';
 import { OrderBook } from '../components/OrderBook';
 import { OrderForm } from '../components/OrderForm';
 import { RecentTrades } from '../components/RecentTrades';
+import { MyFills } from '../components/MyFills';
 import { Balances } from '../components/Balances';
 import { OpenOrders } from '../components/OpenOrders';
 import { WalletModal } from '../components/WalletModal';
@@ -353,7 +354,7 @@ export function Trade() {
             </div>
             <div style={{ flex: 1, overflow: 'auto' }}>
               {activityTab === 'OPEN ORDERS' && <OpenOrders />}
-              {activityTab === 'FILLS' && <RecentTrades pair={pair} />}
+              {activityTab === 'FILLS' && <MyFills pair={pair} />}
               {activityTab === 'BALANCES' && <Balances />}
             </div>
           </div>

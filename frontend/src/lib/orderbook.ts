@@ -65,6 +65,7 @@ export interface OpenOrder {
 export interface GetMyStateResp {
   balances: Record<string, TokenBalance>;
   openOrders: OpenOrder[];
+  matches?: BookMatch[];
 }
 
 export interface PriceLevel {
@@ -80,6 +81,8 @@ export interface PairState {
 export interface BookMatch {
   buyOrderId: string;
   sellOrderId: string;
+  buyOwner: string;
+  sellOwner: string;
   pair: string;
   price: number;
   quantity: number;

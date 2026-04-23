@@ -31,6 +31,8 @@ type Order struct {
 type Match struct {
 	BuyOrderID  string `json:"buyOrderId"`
 	SellOrderID string `json:"sellOrderId"`
+	BuyOwner    string `json:"buyOwner"`
+	SellOwner   string `json:"sellOwner"`
 	Pair        string `json:"pair"`
 	Price       uint64 `json:"price"`
 	Quantity    uint64 `json:"quantity"`
