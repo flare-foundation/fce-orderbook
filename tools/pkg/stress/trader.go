@@ -39,14 +39,16 @@ func NewTrader(idx int, key *ecdsa.PrivateKey, client *ethclient.Client, addrs *
 }
 
 // Deposit sends an on-chain DEPOSIT for this trader. Wraps instrutils.Deposit so
-// the msg.sender is the trader (not the funder).
-func (t *Trader) Deposit(instructionSender, token common.Address, amount uint64) (common.Hash, error) {
-	id, _, err := instrutils.Deposit(t.Support, instructionSender, token, big.NewInt(int64(amount)))
+// the msg.sender is the trader (not the funder). Amount is in raw token units
+// (i.e. already multiplied by 10^decimals of the given token).
+func (t *Trader) Deposit(instructionSender, token common.Address, amount *big.Int) (common.Hash, error) {
+	id, _, err := instrutils.Deposit(t.Support, instructionSender, token, amount)
 	return id, err
 }
 
 // Withdraw sends an on-chain WITHDRAW for this trader, funds return to t.Addr.
-func (t *Trader) Withdraw(instructionSender, token common.Address, amount uint64) (common.Hash, error) {
-	id, _, err := instrutils.Withdraw(t.Support, instructionSender, token, big.NewInt(int64(amount)), t.Addr)
+// Amount is in raw token units.
+func (t *Trader) Withdraw(instructionSender, token common.Address, amount *big.Int) (common.Hash, error) {
+	id, _, err := instrutils.Withdraw(t.Support, instructionSender, token, amount, t.Addr)
 	return id, err
 }

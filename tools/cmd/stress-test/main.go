@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -63,9 +64,20 @@ func main() {
 
 	_ = godotenv.Load("../config/test-tokens.env")
 	quoteTokenStr := os.Getenv("QUOTE_TOKEN")
-	baseTokenStr := os.Getenv("BASE_TOKEN")
-	if quoteTokenStr == "" || baseTokenStr == "" {
-		fmt.Fprintln(os.Stderr, "QUOTE_TOKEN and BASE_TOKEN env vars must be set — run test-setup first")
+	if quoteTokenStr == "" {
+		fmt.Fprintln(os.Stderr, "QUOTE_TOKEN env var must be set — run test-setup first")
+		os.Exit(1)
+	}
+	// Resolve base token by -pair flag. The pair's base-symbol (text before the
+	// "/") selects BASE_TOKEN_<SYMBOL> written by test-setup. Falls back to
+	// BASE_TOKEN (legacy single-pair setup) for backwards compat.
+	baseSymbol := strings.ToUpper(strings.SplitN(*pairF, "/", 2)[0])
+	baseTokenStr := os.Getenv("BASE_TOKEN_" + baseSymbol)
+	if baseTokenStr == "" {
+		baseTokenStr = os.Getenv("BASE_TOKEN")
+	}
+	if baseTokenStr == "" {
+		fmt.Fprintf(os.Stderr, "BASE_TOKEN_%s (or BASE_TOKEN) env var must be set — run test-setup first\n", baseSymbol)
 		os.Exit(1)
 	}
 	quoteToken := common.HexToAddress(quoteTokenStr)

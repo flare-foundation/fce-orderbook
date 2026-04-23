@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { formatPrice } from '../lib/price';
 import type { BookMatch } from '../lib/orderbook';
+import { PairSelector } from './PairSelector';
 
 interface PriceLevel {
   price: number;
@@ -9,12 +10,14 @@ interface PriceLevel {
 
 interface MarketStatsProps {
   pair: string;
+  pairs: string[];
+  onPairChange: (pair: string) => void;
   bids: PriceLevel[];
   asks: PriceLevel[];
   matches: BookMatch[];
 }
 
-export function MarketStats({ pair, bids, asks, matches }: MarketStatsProps) {
+export function MarketStats({ pair, pairs, onPairChange, bids, asks, matches }: MarketStatsProps) {
   const [base, quote] = pair.split('/');
 
   const bestBidRaw = bids.length > 0 ? Math.max(...bids.map(b => b.price)) : 0;
@@ -59,12 +62,7 @@ export function MarketStats({ pair, bids, asks, matches }: MarketStatsProps) {
 
   return (
     <div className="mstats">
-      <div className="mstats-pair">
-        <div className="mstats-pair-text">
-          {base}<span className="slash">/</span>{quote}
-        </div>
-        <div className="mstats-pair-sub">SPOT · FLARE EXCHANGE</div>
-      </div>
+      <PairSelector pair={pair} pairs={pairs} onPairChange={onPairChange} />
       <div className={`mstats-mid ${dir}`}>
         <div className={`price ${dir}`}>{fmtPrice(displayPrice)}</div>
         <div className={`price-change ${changeDir || 'up'}`}>
