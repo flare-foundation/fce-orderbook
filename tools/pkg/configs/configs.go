@@ -14,7 +14,7 @@ const (
 )
 
 const (
-	AddressesFile            = "../docker/sim_dump/deployed-addresses.json"
+	AddressesFile            = "../config/coston2/deployed-addresses.json"
 	ExtensionProxyConfigFile = "./configs/proxy/extension_proxy.toml"
 )
 

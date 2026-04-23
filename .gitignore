@@ -17,6 +17,11 @@ tools/allow-*
 tools/deploy-*
 tools/register-*
 tools/run-*
+tools/stress-test
+tools/test-setup
+
+# Stress-test local state (generated trader keys)
+tools/traders.json
 
 # Generated contract bindings (produced by scripts/generate-bindings.sh)
 tools/pkg/contracts/*/autogen.go

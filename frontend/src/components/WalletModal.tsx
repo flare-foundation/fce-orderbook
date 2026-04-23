@@ -11,6 +11,18 @@ import { PAIRS, INSTRUCTION_SENDER } from '../config/generated';
 
 type Tab = 'FAUCET' | 'DEPOSIT' | 'WITHDRAW' | 'HISTORY';
 
+const FAUCET_AMOUNTS: Record<string, string> = {
+  FLR: '10000',
+  USDT: '100000',
+  BTC: '1',
+  ETH: '15',
+};
+const DEFAULT_FAUCET_AMOUNT = '1000';
+
+function faucetAmountFor(symbol: string): string {
+  return FAUCET_AMOUNTS[symbol.toUpperCase()] ?? DEFAULT_FAUCET_AMOUNT;
+}
+
 interface HistoryEntry {
   id: string;
   type: string;
@@ -140,9 +152,18 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
     const allTokens = getTokens();
     let minted = 0;
     for (const t of allTokens) {
+      const info = tokenInfo[t.address.toLowerCase()];
+      if (info?.decimals === undefined) continue;
+      const human = faucetAmountFor(t.symbol);
+      let raw: bigint;
       try {
-        await faucet.mutateAsync({ token: t.address, to: address });
-        addHistory('MINT', t.symbol, '1000');
+        raw = parseUnits(human, info.decimals);
+      } catch {
+        continue;
+      }
+      try {
+        await faucet.mutateAsync({ token: t.address, to: address, amount: raw });
+        addHistory('MINT', t.symbol, human);
         minted++;
       } catch {
         // Continue to next token
@@ -249,7 +270,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
         {/* Full-width header */}
         <div className="wallet-hdr">
           <div className="wallet-hdr-left">
-            <div className="wallet-hdr-eyebrow">LEDGER · TESTNET WALLET</div>
+            <div className="wallet-hdr-eyebrow">FLARE · TESTNET WALLET</div>
             <div className="wallet-hdr-addr">
               {address ? formatAddress(address) : 'NOT CONNECTED'}
             </div>
@@ -316,8 +337,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
             {tab === 'FAUCET' && (
               <>
                 <div className="wallet-note">
-                  Mint 1000 of each test token directly to your wallet. No real
-                  value.
+                  Mint test tokens directly to your wallet. No real value.
                 </div>
                 <div
                   style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
@@ -335,7 +355,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                       <span style={{ fontWeight: 600, color: 'var(--fg)' }}>
                         {t.symbol}
                       </span>
-                      <span>→ 1000 tokens</span>
+                      <span>→ {faucetAmountFor(t.symbol)} tokens</span>
                     </div>
                   ))}
                 </div>

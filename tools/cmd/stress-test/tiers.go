@@ -116,8 +116,25 @@ func tierByName(name string) (Tier, error) {
 			TakerQtyMilliMin: 100, TakerQtyMilliMax: 1000,
 			WalkerQtyMilliMin: 100, WalkerQtyMilliMax: 1000,
 		}, nil
+	case "FLR-DAY":
+		// Soak profile tracking live FLR/USD via CoinGecko. FLR trades
+		// sub-dollar (~$0.008), so raw price resolution is coarse (a 1bps
+		// spread rounds to zero and is clamped to 1 raw = $0.001, ~12% at
+		// current price); walker bounds are wider on purpose so the hi/lo
+		// integer round doesn't collapse to a single tick. qty 1000-5000 FLR
+		// per order (~$8-$40 at $0.008) keeps the soak balance-neutral and
+		// lets a 100k FLR deposit last many hours.
+		return Tier{
+			Name: "flr-day", Mix: PersonaMix{2, 2, 1, 0, 0},
+			Duration: 0,
+			PriceSymbol: "flare-networks", SpreadBps: 100, WalkerLowBps: 500, WalkerHighBps: 500,
+			MMRefresh: 20 * time.Second, TakerPause: 45 * time.Second, WalkerPause: 60 * time.Second,
+			MMQtyMilliMin: 1_000_000, MMQtyMilliMax: 5_000_000,
+			TakerQtyMilliMin: 1_000_000, TakerQtyMilliMax: 5_000_000,
+			WalkerQtyMilliMin: 1_000_000, WalkerQtyMilliMax: 5_000_000,
+		}, nil
 	default:
-		return Tier{}, fmt.Errorf("unknown tier %q (want L1..L5, day, btc-day, eth-day)", name)
+		return Tier{}, fmt.Errorf("unknown tier %q (want L1..L5, day, btc-day, eth-day, flr-day)", name)
 	}
 }
 

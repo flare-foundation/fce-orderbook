@@ -25,7 +25,7 @@ export function Header({ hiddenPanels, onRestore, bottomHidden, onRestoreBottom,
     <header className="hdr">
       <div className="hdr-brand">
         <span className="accent-text">◆</span>
-        <span className="name">LEDGER</span>
+        <span className="name">FLARE</span>
         <span className="sub">/ exchange</span>
       </div>
 

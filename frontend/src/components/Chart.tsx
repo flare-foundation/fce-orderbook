@@ -8,7 +8,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { useBookState } from '../hooks/useBookState';
-import { bucketMatches, type Timeframe, TF_SECONDS } from '../lib/candles';
+import { bucketMatches, type Candle, type Timeframe, TF_SECONDS } from '../lib/candles';
 
 interface ChartProps {
   pair: string;
@@ -27,6 +27,8 @@ export function Chart({ pair, timeframe }: ChartProps) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const lastTfRef = useRef<Timeframe | null>(null);
+  const lastPairRef = useRef<string | null>(null);
+  const prevCandlesRef = useRef<Candle[]>([]);
 
   const candles = useMemo(() => bucketMatches(matches, timeframe), [matches, timeframe]);
 
@@ -96,6 +98,7 @@ export function Chart({ pair, timeframe }: ChartProps) {
       chartRef.current = null;
       seriesRef.current = null;
       lastTfRef.current = null;
+      lastPairRef.current = null;
     };
   }, []);
 
@@ -104,18 +107,46 @@ export function Chart({ pair, timeframe }: ChartProps) {
     const chart = chartRef.current;
     if (!series || !chart) return;
 
-    const data = candles.map(c => ({
+    const toBar = (c: Candle) => ({
       time: c.time as UTCTimestamp,
       open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
-    }));
+    });
+    const sameBar = (a: Candle, b: Candle) =>
+      a.time === b.time && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close;
 
-    series.setData(data);
+    const prev = prevCandlesRef.current;
+    const n = candles.length;
+    const tfChanged = lastTfRef.current !== timeframe;
+    const pairChanged = lastPairRef.current !== pair;
 
-    if (lastTfRef.current !== timeframe) {
-      const last = data[data.length - 1]?.time;
+    if (!tfChanged && !pairChanged && n > 0 && n === prev.length) {
+      // Check if only the last bar differs — common live-tick case, use update() to avoid full redraw.
+      let diffIdx = -1;
+      for (let i = 0; i < n; i++) {
+        if (!sameBar(candles[i], prev[i])) {
+          if (diffIdx !== -1) { diffIdx = -2; break; }
+          diffIdx = i;
+        }
+      }
+      if (diffIdx === -1) {
+        prevCandlesRef.current = candles;
+        return; // identical — nothing to redraw
+      }
+      if (diffIdx === n - 1) {
+        series.update(toBar(candles[n - 1]));
+        prevCandlesRef.current = candles;
+        return;
+      }
+    }
+
+    series.setData(candles.map(toBar));
+    prevCandlesRef.current = candles;
+
+    if (tfChanged || pairChanged) {
+      const last = candles[n - 1]?.time;
       if (typeof last === 'number') {
         const span = Math.max(60, TF_SECONDS[timeframe] * 60);
         chart.timeScale().setVisibleRange({
@@ -125,9 +156,13 @@ export function Chart({ pair, timeframe }: ChartProps) {
       } else {
         chart.timeScale().fitContent();
       }
+      // Force price scale to refit to the new series' range — otherwise a
+      // switch from e.g. BTC (80k) to ETH (3k) keeps the old scale.
+      chart.priceScale('right').applyOptions({ autoScale: true });
       lastTfRef.current = timeframe;
+      lastPairRef.current = pair;
     }
-  }, [candles, timeframe]);
+  }, [candles, timeframe, pair]);
 
   const hasData = candles.length > 0;
 

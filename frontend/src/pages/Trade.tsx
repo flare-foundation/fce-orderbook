@@ -348,9 +348,6 @@ export function Trade() {
   return (
     <div className="t-layout">
       <Header
-        pairs={PAIRS.map(p => p.name)}
-        pair={pair}
-        onPairChange={setPair}
         hiddenPanels={hiddenPanels}
         onRestore={(id) => togglePanel(id as keyof PanelVis)}
         bottomHidden={!layout.bottomVisible}
@@ -360,7 +357,14 @@ export function Trade() {
 
       <TeeProxyStatus />
 
-      <MarketStats pair={pair} bids={bids} asks={asks} matches={matches} />
+      <MarketStats
+        pair={pair}
+        pairs={PAIRS.map(p => p.name)}
+        onPairChange={setPair}
+        bids={bids}
+        asks={asks}
+        matches={matches}
+      />
 
       <ResizableRow panels={topPanels} onResizePair={setTopFlex} />
 
