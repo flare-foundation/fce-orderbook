@@ -49,8 +49,6 @@ services:
 
   extension-tee:
     image: ${EXTENSION_TEE_IMAGE:?EXTENSION_TEE_IMAGE must be set}
-    volumes:
-      - ../../config/pairs.json:/app/config/pairs.json:ro
     environment:
       - MODE=${MODE:-1}
       - INITIAL_OWNER=${INITIAL_OWNER:?INITIAL_OWNER must be set}

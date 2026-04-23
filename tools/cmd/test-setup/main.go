@@ -2,11 +2,16 @@
 //
 // It performs these steps:
 //  1. Allow deployer to deposit (idempotent)
-//  2. Deploy two TestToken contracts (quote + base)
-//  3. Update config/pairs.json with deployed token addresses
+//  2. Deploy four TestToken contracts (TUSDT, TFLR, TBTC, TETH)
+//  3. Update config/pairs.json with deployed token addresses (3 pairs)
 //  4. Mint tokens to the deployer
-//  5. Approve InstructionSender to spend both tokens
+//  5. Approve InstructionSender to spend all tokens
 //  6. Write config/test-tokens.env for use by other test commands
+//
+// If config/pairs.json is already fully populated (every baseToken/quoteToken
+// is a non-zero address) steps 2, 3, and 4 are skipped — token addresses are
+// read from pairs.json instead. Steps 1, 5, and 6 always run, because allow
+// and approve are tied to the (possibly fresh) InstructionSender.
 //
 // Note: setExtensionId is handled by post-build.sh, not here.
 //
@@ -87,80 +92,154 @@ func main() {
 		logger.Infof("  Deployer allowed")
 	}
 
-	// --- Step 2: Deploy test tokens ---
-	logger.Infof("Step 2: Deploying test tokens...")
-
-	time.Sleep(txSpacing)
-	quoteToken, err := instrutils.DeployTestToken(s, testTokenArtifact, "TestUSDT", "TUSDT")
-	if err != nil {
-		fccutils.FatalWithCause(fmt.Errorf("deploying quote token: %w", err))
+	type tokenSpec struct {
+		name    string
+		symbol  string
+		display string
 	}
-	logger.Infof("  Quote token (TUSDT) deployed at: %s", quoteToken.Hex())
-
-	time.Sleep(txSpacing)
-	baseToken, err := instrutils.DeployTestToken(s, testTokenArtifact, "TestFLR", "TFLR")
-	if err != nil {
-		fccutils.FatalWithCause(fmt.Errorf("deploying base token: %w", err))
+	specs := []tokenSpec{
+		{"TestUSDT", "TUSDT", "TUSDT"},
+		{"TestFLR", "TFLR", "TFLR"},
+		{"TestBTC", "TBTC", "TBTC"},
+		{"TestETH", "TETH", "TETH"},
 	}
-	logger.Infof("  Base token (TFLR) deployed at: %s", baseToken.Hex())
 
-	// --- Step 3: Update pairs.json ---
-	logger.Infof("Step 3: Updating config/pairs.json...")
-	pairs := []pairConfig{
-		{Name: "FLR/USDT", BaseToken: baseToken.Hex(), QuoteToken: quoteToken.Hex()},
-	}
-	pairsJSON, _ := json.MarshalIndent(pairs, "", "    ")
-	if err := os.WriteFile(pairsConfigPath, pairsJSON, 0644); err != nil {
-		fccutils.FatalWithCause(fmt.Errorf("writing pairs.json: %w", err))
-	}
-	logger.Infof("  Updated with FLR/USDT pair")
+	addrs := make(map[string]common.Address, len(specs))
 
-	// --- Step 4: Mint tokens ---
-	logger.Infof("Step 4: Minting tokens to deployer...")
-	amount := big.NewInt(mintAmount)
+	// --- Steps 2/3/4: deploy, write pairs.json, mint — skipped if pairs.json is
+	// already populated (tokens already exist on-chain from a prior run). ---
+	if existing, ok := readPopulatedPairs(pairsConfigPath); ok {
+		logger.Infof("Step 2/3/4: config/pairs.json already populated — skipping deploy, pairs.json write, and mint")
+		if err := addressesFromExistingPairs(existing, addrs); err != nil {
+			fccutils.FatalWithCause(err)
+		}
+		for _, spec := range specs {
+			logger.Infof("  %s=%s (from pairs.json)", spec.display, addrs[spec.symbol].Hex())
+		}
+	} else {
+		logger.Infof("Step 2: Deploying test tokens...")
+		for _, spec := range specs {
+			time.Sleep(txSpacing)
+			a, err := instrutils.DeployTestToken(s, testTokenArtifact, spec.name, spec.symbol)
+			if err != nil {
+				fccutils.FatalWithCause(fmt.Errorf("deploying %s: %w", spec.symbol, err))
+			}
+			addrs[spec.symbol] = a
+			logger.Infof("  %s deployed at: %s", spec.display, a.Hex())
+		}
 
-	time.Sleep(txSpacing)
-	if err := instrutils.MintERC20(s, quoteToken, deployer, amount); err != nil {
-		fccutils.FatalWithCause(fmt.Errorf("minting quote token: %w", err))
-	}
-	logger.Infof("  Minted %d TUSDT to %s", mintAmount, deployer.Hex())
+		logger.Infof("Step 3: Updating config/pairs.json...")
+		pairs := []pairConfig{
+			{Name: "FLR/USDT", BaseToken: addrs["TFLR"].Hex(), QuoteToken: addrs["TUSDT"].Hex()},
+			{Name: "BTC/USDT", BaseToken: addrs["TBTC"].Hex(), QuoteToken: addrs["TUSDT"].Hex()},
+			{Name: "ETH/USDT", BaseToken: addrs["TETH"].Hex(), QuoteToken: addrs["TUSDT"].Hex()},
+		}
+		pairsJSON, _ := json.MarshalIndent(pairs, "", "    ")
+		if err := os.WriteFile(pairsConfigPath, pairsJSON, 0644); err != nil {
+			fccutils.FatalWithCause(fmt.Errorf("writing pairs.json: %w", err))
+		}
+		logger.Infof("  Wrote FLR/USDT, BTC/USDT, ETH/USDT")
 
-	time.Sleep(txSpacing)
-	if err := instrutils.MintERC20(s, baseToken, deployer, amount); err != nil {
-		fccutils.FatalWithCause(fmt.Errorf("minting base token: %w", err))
+		logger.Infof("Step 4: Minting tokens to deployer...")
+		amount := big.NewInt(mintAmount)
+		for _, spec := range specs {
+			time.Sleep(txSpacing)
+			if err := instrutils.MintERC20(s, addrs[spec.symbol], deployer, amount); err != nil {
+				fccutils.FatalWithCause(fmt.Errorf("minting %s: %w", spec.symbol, err))
+			}
+			logger.Infof("  Minted %d %s to %s", mintAmount, spec.display, deployer.Hex())
+		}
 	}
-	logger.Infof("  Minted %d TFLR to %s", mintAmount, deployer.Hex())
+
+	tusdt := addrs["TUSDT"]
+	tflr := addrs["TFLR"]
+	tbtc := addrs["TBTC"]
+	teth := addrs["TETH"]
 
 	// --- Step 5: Approve InstructionSender ---
+	// Always runs — the InstructionSender may have been freshly redeployed
+	// (ERC20 approvals are stored per-spender, so a new InstructionSender
+	// starts with zero allowance even if the tokens themselves are unchanged).
 	logger.Infof("Step 5: Approving InstructionSender to spend tokens...")
 	approveAmt := big.NewInt(approveAmount)
-
-	time.Sleep(txSpacing)
-	if err := instrutils.ApproveERC20(s, quoteToken, instructionSenderAddr, approveAmt); err != nil {
-		fccutils.FatalWithCause(fmt.Errorf("approving quote token: %w", err))
+	for _, spec := range specs {
+		time.Sleep(txSpacing)
+		if err := instrutils.ApproveERC20(s, addrs[spec.symbol], instructionSenderAddr, approveAmt); err != nil {
+			fccutils.FatalWithCause(fmt.Errorf("approving %s: %w", spec.symbol, err))
+		}
+		logger.Infof("  Approved %d %s", approveAmount, spec.display)
 	}
-	logger.Infof("  Approved %d TUSDT", approveAmount)
-
-	time.Sleep(txSpacing)
-	if err := instrutils.ApproveERC20(s, baseToken, instructionSenderAddr, approveAmt); err != nil {
-		fccutils.FatalWithCause(fmt.Errorf("approving base token: %w", err))
-	}
-	logger.Infof("  Approved %d TFLR", approveAmount)
 
 	// --- Step 6: Write test-tokens.env ---
+	// QUOTE_TOKEN / BASE_TOKEN retain their original FLR/USDT meaning so existing
+	// test-deposit / test-withdraw commands keep working unchanged.
 	logger.Infof("Step 6: Writing config/test-tokens.env...")
 	os.MkdirAll(filepath.Dir(testTokensEnvPath), 0755)
-	envContent := fmt.Sprintf("# Auto-generated by test-setup — do not edit manually\nQUOTE_TOKEN=%s\nBASE_TOKEN=%s\n", quoteToken.Hex(), baseToken.Hex())
+	envContent := fmt.Sprintf(
+		"# Auto-generated by test-setup — do not edit manually\nQUOTE_TOKEN=%s\nBASE_TOKEN=%s\nTUSDT_TOKEN=%s\nTFLR_TOKEN=%s\nTBTC_TOKEN=%s\nTETH_TOKEN=%s\n",
+		tusdt.Hex(), tflr.Hex(), tusdt.Hex(), tflr.Hex(), tbtc.Hex(), teth.Hex(),
+	)
 	if err := os.WriteFile(testTokensEnvPath, []byte(envContent), 0644); err != nil {
 		fccutils.FatalWithCause(fmt.Errorf("writing test-tokens.env: %w", err))
 	}
 
 	logger.Infof("")
 	logger.Infof("Setup complete!")
-	logger.Infof("  QUOTE_TOKEN=%s", quoteToken.Hex())
-	logger.Infof("  BASE_TOKEN=%s", baseToken.Hex())
-	logger.Infof("")
-	logger.Infof("Next: restart the extension (to pick up new pairs.json), then run test-deposit")
+	logger.Infof("  TUSDT=%s", tusdt.Hex())
+	logger.Infof("  TFLR=%s", tflr.Hex())
+	logger.Infof("  TBTC=%s", tbtc.Hex())
+	logger.Infof("  TETH=%s", teth.Hex())
+}
+
+var zeroAddr = common.Address{}
+
+// readPopulatedPairs returns the parsed pairs slice iff every pair has
+// non-zero baseToken and quoteToken addresses. Returns (nil, false) when the
+// file is missing, malformed, empty, or contains any zero address.
+func readPopulatedPairs(path string) ([]pairConfig, bool) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var pairs []pairConfig
+	if err := json.Unmarshal(raw, &pairs); err != nil || len(pairs) == 0 {
+		return nil, false
+	}
+	for _, p := range pairs {
+		if !common.IsHexAddress(p.BaseToken) || !common.IsHexAddress(p.QuoteToken) {
+			return nil, false
+		}
+		if common.HexToAddress(p.BaseToken) == zeroAddr || common.HexToAddress(p.QuoteToken) == zeroAddr {
+			return nil, false
+		}
+	}
+	return pairs, true
+}
+
+// addressesFromExistingPairs fills addrs (symbol → address) by matching pairs
+// in pairs.json against the known pair names. Returns an error if any expected
+// pair is missing.
+func addressesFromExistingPairs(pairs []pairConfig, addrs map[string]common.Address) error {
+	// name → (baseSymbol, quoteSymbol)
+	byName := map[string][2]string{
+		"FLR/USDT": {"TFLR", "TUSDT"},
+		"BTC/USDT": {"TBTC", "TUSDT"},
+		"ETH/USDT": {"TETH", "TUSDT"},
+	}
+	for _, p := range pairs {
+		syms, ok := byName[p.Name]
+		if !ok {
+			continue // unknown pair, ignored
+		}
+		addrs[syms[0]] = common.HexToAddress(p.BaseToken)
+		addrs[syms[1]] = common.HexToAddress(p.QuoteToken)
+	}
+	for _, sym := range []string{"TUSDT", "TFLR", "TBTC", "TETH"} {
+		if _, ok := addrs[sym]; !ok {
+			return fmt.Errorf("pairs.json missing pair that defines %s", sym)
+		}
+	}
+	return nil
 }
 
 func allowUser(s *support.Support, instructionSenderAddr, user common.Address) error {

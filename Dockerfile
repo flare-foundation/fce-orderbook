@@ -61,6 +61,8 @@ WORKDIR /app
 # re-apply chmod/chown on each COPY so metadata is pinned here and does not depend on whatever the builder stage left behind
 COPY --chmod=644 --chown=65532:65532 --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --chmod=755 --chown=65532:65532 --from=builder /app/extension-tee /app/extension-tee
+COPY --chmod=755 --chown=65532:65532 --from=builder /app/types-server /app/types-server
+COPY --chmod=644 --chown=65532:65532 extension-examples/orderbook/config/pairs.json /app/config/pairs.json
 
 # production mode
 ENV MODE=1 CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
