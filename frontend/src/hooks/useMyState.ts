@@ -22,6 +22,7 @@ export function useMyState() {
     ...query,
     balances: query.data?.balances ?? {},
     openOrders: query.data?.openOrders ?? [],
+    matches: query.data?.matches ?? [],
     invalidate,
   };
 }

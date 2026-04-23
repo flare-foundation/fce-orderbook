@@ -185,6 +185,8 @@ func (ob *OrderBook) fillFromQueue(
 			m = Match{
 				BuyOrderID:  incoming.ID,
 				SellOrderID: resting.ID,
+				BuyOwner:    incoming.Owner,
+				SellOwner:   resting.Owner,
 				Pair:        ob.pair,
 				Price:       restingPrice,
 				Quantity:    fillQty,
@@ -196,6 +198,8 @@ func (ob *OrderBook) fillFromQueue(
 			m = Match{
 				BuyOrderID:  resting.ID,
 				SellOrderID: incoming.ID,
+				BuyOwner:    resting.Owner,
+				SellOwner:   incoming.Owner,
 				Pair:        ob.pair,
 				Price:       restingPrice,
 				Quantity:    fillQty,
