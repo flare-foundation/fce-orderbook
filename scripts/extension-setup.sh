@@ -7,15 +7,19 @@
 #
 # For the orderbook this:
 #   1. Allows the deployer to deposit (KYC allowlist)
-#   2. Deploys two TestToken contracts (TUSDT + TFLR)
+#   2. Deploys four TestToken contracts (TUSDT, TFLR, TBTC, TETH)
 #   3. Updates config/pairs.json with the deployed token addresses
 #   4. Mints tokens to the deployer
 #   5. Approves InstructionSender to spend tokens
 #   6. Writes config/test-tokens.env
 #
-# Why this must run before Docker:
-#   The extension reads config/pairs.json at startup. If tokens are deployed
-#   after the container starts, the extension won't know about them.
+# Token deployment (steps 2–4) is skipped automatically by test-setup when
+# config/pairs.json is already fully populated — token addresses are read from
+# there instead. Steps 1, 5, and 6 always run, because allow + approve are
+# tied to the (possibly freshly-redeployed) InstructionSender.
+#
+# pairs.json is baked into the Docker image, so if you ever re-run token
+# deployment you must rebuild the image before `docker compose up`.
 #
 # Inputs (env vars, typically sourced from .env + config/extension.env):
 #   ADDRESSES_FILE       — path to deployed-addresses.json

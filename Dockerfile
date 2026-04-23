@@ -17,7 +17,10 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/extension-tee ./
 COPY --from=builder /app/types-server ./
+COPY extension-examples/orderbook/config/pairs.json ./config/pairs.json
 
-ENV MODE=1 CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
+LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID"
+
+ENV MODE=0 CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
 EXPOSE 5501 7701 7702
 CMD ["./extension-tee"]

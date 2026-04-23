@@ -38,8 +38,6 @@ services:
     build:
       context: ../..
       dockerfile: extension-examples/orderbook/Dockerfile
-    volumes:
-      - ./config/pairs.json:/app/config/pairs.json:ro
     env_file:
       - path: ./config/extension.env
         required: false
