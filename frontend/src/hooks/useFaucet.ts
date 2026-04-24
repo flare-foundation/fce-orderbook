@@ -3,11 +3,10 @@ import { useWriteContract, usePublicClient } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi } from "../abi/erc20";
 
-const FAUCET_AMOUNT = BigInt("1000000000"); // 1000 tokens at 6 decimals (1000e6)
-
 interface FaucetArgs {
   token: Address;
   to: Address;
+  amount: bigint;
 }
 
 export function useFaucet() {
@@ -16,12 +15,12 @@ export function useFaucet() {
   const queryClient = useQueryClient();
 
   return useMutation<`0x${string}`, Error, FaucetArgs>({
-    mutationFn: async ({ token, to }) => {
+    mutationFn: async ({ token, to, amount }) => {
       const tx = await writeContractAsync({
         address: token,
         abi: erc20Abi,
         functionName: "mint",
-        args: [to, FAUCET_AMOUNT],
+        args: [to, amount],
       });
       // Wait for the mint to be mined before returning so the next refetch sees it.
       if (publicClient) {

@@ -122,11 +122,15 @@ If you've sourced your env files (see "Setup your shell" above), the values come
 This runs automatically as part of `full-setup.sh` (Phase 1.5), but can also be run standalone. It calls the `test-setup` Go command which:
 
 1. Allows deployer to deposit on the InstructionSender (idempotent)
-2. Deploys two TestToken contracts (TUSDT + TFLR)
-3. Updates `config/pairs.json` with the deployed token addresses
-4. Mints 1,000,000 of each token to the deployer
-5. Approves InstructionSender to spend 1,000,000 of each token
-6. Writes `config/test-tokens.env` with `QUOTE_TOKEN` and `BASE_TOKEN`
+2. Deploys four TestToken contracts: one shared quote (TUSDT) and one base per
+   pair (TFLR, TBTC, TETH)
+3. Updates `config/pairs.json` with all three pairs (FLR/USDT, BTC/USDT,
+   ETH/USDT), each sharing the TUSDT quote
+4. Mints 1,000,000 of every token to the deployer
+5. Approves InstructionSender to spend 1,000,000 of every token
+6. Writes `config/test-tokens.env` with `QUOTE_TOKEN`, legacy `BASE_TOKEN`
+   (= FLR base) for `test-deposit` / `test-withdraw`, plus `BASE_TOKEN_FLR` /
+   `BASE_TOKEN_BTC` / `BASE_TOKEN_ETH` for `stress-test` pair targeting
 
 **Run once, before Docker.** This must run before `docker compose up` so the extension loads the correct `pairs.json` at startup. Re-running deploys fresh tokens (requires restarting Docker to pick up new addresses).
 

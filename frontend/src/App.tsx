@@ -9,7 +9,7 @@ import { ToastProvider } from "./components/ui/Toast";
 import { Trade } from "./pages/Trade";
 
 const config = getDefaultConfig({
-  appName: "LEDGER",
+  appName: "FLARE",
   projectId: env.walletConnectProjectId || "placeholder-project-id",
   chains: [coston2],
 });

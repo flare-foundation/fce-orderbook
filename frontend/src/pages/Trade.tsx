@@ -14,10 +14,31 @@ import { Panel } from '../components/ui/Panel';
 import { useBookState } from '../hooks/useBookState';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { PAIRS } from '../config/generated';
+import { TIMEFRAMES, type Timeframe } from '../lib/candles';
 
 // ─── Layout state ─────────────────────────────────────────────
 
 const LS_KEY = 'ledger:layout:v2';
+const TF_LS_KEY = 'ledger:chart:timeframe';
+const PAIR_LS_KEY = 'ledger:pair';
+
+function loadTimeframe(): Timeframe {
+  try {
+    const raw = localStorage.getItem(TF_LS_KEY);
+    if (raw && (TIMEFRAMES as readonly string[]).includes(raw)) return raw as Timeframe;
+  } catch {}
+  return '15m';
+}
+
+function loadPair(): string {
+  const names = PAIRS.map(p => p.name);
+  const fallback = names[0] ?? 'FLR/USDT';
+  try {
+    const raw = localStorage.getItem(PAIR_LS_KEY);
+    if (raw && names.includes(raw)) return raw;
+  } catch {}
+  return fallback;
+}
 
 interface PanelVis {
   chart: boolean;
@@ -149,17 +170,27 @@ function ResizableRow({
 // ─── Main Trade component ──────────────────────────────────────
 
 export function Trade() {
-  const pair = PAIRS[0]?.name ?? 'FLR/USDT';
+  const [pair, setPair] = useState<string>(loadPair);
 
   const [prefillPrice, setPrefillPrice] = useState<number | null>(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [activityTab, setActivityTab] = useState<'OPEN ORDERS' | 'FILLS' | 'BALANCES'>('OPEN ORDERS');
   const [layout, setLayout] = useState<LayoutState>(loadLayout);
+  const [timeframe, setTimeframe] = useState<Timeframe>(loadTimeframe);
 
   // Persist layout
   useEffect(() => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(layout)); } catch {}
   }, [layout]);
+
+  useEffect(() => {
+    try { localStorage.setItem(TF_LS_KEY, timeframe); } catch {}
+  }, [timeframe]);
+
+  useEffect(() => {
+    try { localStorage.setItem(PAIR_LS_KEY, pair); } catch {}
+    setPrefillPrice(null);
+  }, [pair]);
 
   const { bids, asks, matches } = useBookState(pair);
   const { tokenInfo } = useWalletBalances();
@@ -227,15 +258,22 @@ export function Trade() {
           title={`CHART · ${pair} · LIVE`}
           right={
             <div className="chart-tfs">
-              {(['1m', '5m', '15m', '1h', '4h', '1D'] as const).map((tf, i) => (
-                <button key={tf} className={i === 2 ? 'active' : ''}>{tf}</button>
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf}
+                  type="button"
+                  className={timeframe === tf ? 'active' : ''}
+                  onClick={() => setTimeframe(tf)}
+                >
+                  {tf}
+                </button>
               ))}
             </div>
           }
           noPad
           onClose={() => togglePanel('chart')}
         >
-          <Chart pair={pair} />
+          <Chart pair={pair} timeframe={timeframe} />
         </Panel>
       ),
     });
@@ -319,7 +357,14 @@ export function Trade() {
 
       <TeeProxyStatus />
 
-      <MarketStats pair={pair} bids={bids} asks={asks} matches={matches} />
+      <MarketStats
+        pair={pair}
+        pairs={PAIRS.map(p => p.name)}
+        onPairChange={setPair}
+        bids={bids}
+        asks={asks}
+        matches={matches}
+      />
 
       <ResizableRow panels={topPanels} onResizePair={setTopFlex} />
 
