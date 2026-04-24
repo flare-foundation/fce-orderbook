@@ -1,51 +1,136 @@
-// Package types contains types that could be useful to other apps when interacting with this extension.
+// Package types contains request/response types for the orderbook extension.
 package types
 
 import (
-	"github.com/ethereum/go-ethereum/accounts/abi"
+	"extension-scaffold/pkg/balance"
+	"extension-scaffold/pkg/orderbook"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// SayHelloRequest is the JSON payload sent via the Solidity contract.
-type SayHelloRequest struct {
-	Name string `json:"name"`
+// --- Deposit (on-chain instruction) ---
+
+type DepositRequest struct {
+	Token  common.Address `json:"token"`
+	Amount uint64         `json:"amount"`
 }
 
-// SayHelloResponse is the JSON payload returned in ActionResult.Data.
-type SayHelloResponse struct {
-	Greeting       string `json:"greeting"`
-	GreetingNumber int    `json:"greetingNumber"`
+type DepositResponse struct {
+	Token     common.Address `json:"token"`
+	Amount    uint64         `json:"amount"`
+	Available uint64         `json:"available"`
 }
 
-// SayGoodbyeRequest is the ABI-decoded payload sent via the Solidity contract.
-type SayGoodbyeRequest struct {
-	Name   string `json:"name"`
-	Reason string `json:"reason"`
+// --- Withdraw (on-chain instruction) ---
+
+type WithdrawRequest struct {
+	Token   common.Address `json:"token"`
+	Amount  uint64         `json:"amount"`
+	Address common.Address `json:"address"`
 }
 
-// SayGoodbyeResponse is the JSON payload returned in ActionResult.Data.
-type SayGoodbyeResponse struct {
-	Farewell       string `json:"farewell"`
-	FarewellNumber int    `json:"farewellNumber"`
+type WithdrawResponse struct {
+	Token        common.Address `json:"token"`
+	Amount       uint64         `json:"amount"`
+	To           common.Address `json:"to"`
+	WithdrawalID common.Hash    `json:"withdrawalId"`
+	Signature    hexutil.Bytes  `json:"signature"`
+	Available    uint64         `json:"available"`
 }
 
-// SayGoodbyeMessageArg describes the ABI layout of SayGoodbyeMessage from the Solidity contract.
-var SayGoodbyeMessageArg abi.Argument
+// --- Place Order (direct instruction) ---
 
-func init() {
-	tupleTy, _ := abi.NewType("tuple", "", []abi.ArgumentMarshaling{
-		{Name: "name", Type: "string"},
-		{Name: "reason", Type: "string"},
-	})
-	SayGoodbyeMessageArg = abi.Argument{Type: tupleTy}
+type PlaceOrderRequest struct {
+	Sender   string              `json:"sender"`
+	Pair     string              `json:"pair"`
+	Side     orderbook.Side      `json:"side"`
+	Type     orderbook.OrderType `json:"type"`
+	Price    uint64              `json:"price"`
+	Quantity uint64              `json:"quantity"`
 }
 
-// State holds the extension's observable state, returned by GET /state.
+type PlaceOrderResponse struct {
+	OrderID   string            `json:"orderId"`
+	Status    string            `json:"status"` // "filled", "partial", "resting"
+	Matches   []orderbook.Match `json:"matches,omitempty"`
+	Remaining uint64            `json:"remaining"`
+}
+
+// --- Cancel Order (direct instruction) ---
+
+type CancelOrderRequest struct {
+	Sender  string `json:"sender"`
+	OrderID string `json:"orderId"`
+}
+
+type CancelOrderResponse struct {
+	OrderID   string `json:"orderId"`
+	Pair      string `json:"pair"`
+	Side      string `json:"side"`
+	Remaining uint64 `json:"remaining"`
+}
+
+// --- Get My State (direct instruction) ---
+
+type GetMyStateRequest struct {
+	Sender string `json:"sender"`
+}
+
+type GetMyStateResponse struct {
+	Balances   map[common.Address]balance.TokenBalance `json:"balances"`
+	OpenOrders []orderbook.Order                       `json:"openOrders"`
+	Matches    []orderbook.Match                       `json:"matches"`
+}
+
+// --- Get Book State (direct instruction) ---
+// Public orderbook depth + recent matches. Same payload shape as GET /state,
+// but routed through the TEE proxy's /direct path so external clients can query it.
+
+type GetBookStateRequest struct {
+	Sender string `json:"sender,omitempty"`
+}
+
+// --- Export History (direct instruction) ---
+
+type ExportHistoryRequest struct {
+	Sender     string `json:"sender"`
+	TargetUser string `json:"targetUser,omitempty"` // admin only
+}
+
+type ExportHistoryResponse struct {
+	User        string                                  `json:"user"`
+	Balances    map[common.Address]balance.TokenBalance  `json:"balances"`
+	Orders      []orderbook.Order                       `json:"orders"`
+	Matches     []orderbook.Match                       `json:"matches"`
+	Deposits    []DepositRecord                         `json:"deposits"`
+	Withdrawals []WithdrawalRecord                      `json:"withdrawals"`
+}
+
+type DepositRecord struct {
+	Token     common.Address `json:"token"`
+	Amount    uint64         `json:"amount"`
+	Timestamp int64          `json:"timestamp"`
+}
+
+type WithdrawalRecord struct {
+	Token     common.Address `json:"token"`
+	Amount    uint64         `json:"amount"`
+	Address   common.Address `json:"address"`
+	Timestamp int64          `json:"timestamp"`
+}
+
+// --- State (public, unencrypted via GET /state) ---
+
 type State struct {
-	GreetingCount int    `json:"greetingCount"`
-	LastGreeting  string `json:"lastGreeting"`
-	FarewellCount int    `json:"farewellCount"`
-	LastFarewell  string `json:"lastFarewell"`
+	Pairs      map[string]PairState `json:"pairs"`
+	MatchCount int                  `json:"matchCount"`
+	Matches    []orderbook.Match    `json:"matches"`
+}
+
+type PairState struct {
+	Bids []orderbook.PriceLevel `json:"bids"`
+	Asks []orderbook.PriceLevel `json:"asks"`
 }
 
 // --- DO NOT MODIFY below this line. ---

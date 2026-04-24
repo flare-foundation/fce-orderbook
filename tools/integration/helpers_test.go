@@ -11,14 +11,14 @@
 // Against Coston2:
 //
 //	cd tools && CHAIN_URL=https://coston2-api.flare.network/ext/C/rpc \
-//	  PRIV_KEY=<funded-key> \
+//	  DEPLOYMENT_PRIVATE_KEY=<funded-key> \
 //	  go test -tags integration ./integration/ -v -count=1
 //
 // Environment variables:
 //
 //	CHAIN_URL       — RPC endpoint (default: http://127.0.0.1:8545)
 //	ADDRESSES_FILE  — path to deployed-addresses.json (default: ../../config/coston2/deployed-addresses.json)
-//	PRIV_KEY        — funded private key hex (default: Hardhat dev key)
+//	DEPLOYMENT_PRIVATE_KEY        — funded private key hex (default: Hardhat dev key)
 package integration
 
 import (
@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"extension-scaffold/tools/pkg/contracts/helloworld"
+	"extension-scaffold/tools/pkg/contracts/orderbook"
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/support"
 
@@ -91,7 +91,7 @@ func TestMain(m *testing.M) {
 // deployFreshInstructionSender deploys a new InstructionSender contract using
 // the registry addresses from testSupport. Returns the deployed address and
 // bound contract instance.
-func deployFreshInstructionSender(t *testing.T) (common.Address, *helloworld.HelloWorldInstructionSender) {
+func deployFreshInstructionSender(t *testing.T) (common.Address, *orderbook.OrderbookInstructionSender) {
 	t.Helper()
 	time.Sleep(rpcDelay)
 
@@ -100,10 +100,14 @@ func deployFreshInstructionSender(t *testing.T) (common.Address, *helloworld.Hel
 		t.Fatalf("failed to create transactor: %v", err)
 	}
 
-	address, tx, contract, err := helloworld.DeployHelloWorldInstructionSender(
+	deployer := crypto.PubkeyToAddress(testSupport.Prv.PublicKey)
+	admins := []common.Address{deployer}
+
+	address, tx, contract, err := orderbook.DeployOrderbookInstructionSender(
 		opts, testSupport.ChainClient,
 		testSupport.Addresses.TeeExtensionRegistry,
 		testSupport.Addresses.TeeMachineRegistry,
+		admins,
 	)
 	if err != nil {
 		t.Fatalf("failed to deploy InstructionSender: %v", err)
@@ -135,9 +139,13 @@ func deployInstructionSenderRaw(t *testing.T, registryAddr, machineRegistryAddr 
 		t.Fatalf("failed to create transactor: %v", err)
 	}
 
-	_, _, _, err = helloworld.DeployHelloWorldInstructionSender(
+	deployer := crypto.PubkeyToAddress(testSupport.Prv.PublicKey)
+	admins := []common.Address{deployer}
+
+	_, _, _, err = orderbook.DeployOrderbookInstructionSender(
 		opts, testSupport.ChainClient,
 		registryAddr, machineRegistryAddr,
+		admins,
 	)
 	return err
 }

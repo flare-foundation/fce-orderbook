@@ -5,6 +5,8 @@
 config/proxy/extension_proxy.coston2.toml
 config/proxy/extension_proxy.coston2.docker.toml
 config/extension.env
+config/register-tee.state
+
 out/
 cache/
 .DS_Store
@@ -24,5 +26,10 @@ tools/pkg/contracts/*/*.bin
 docs/superpowers
 
 notes/
+
+.worktrees/
+
+# Private deployment guide (SSH, redeploy instructions)
+DEPLOYMENT.md
 
 config/**/*.log

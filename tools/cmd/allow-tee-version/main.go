@@ -34,6 +34,9 @@ func main() {
 	var privKey *ecdsa.PrivateKey
 	privKeyString := os.Getenv("EXTENSION_OWNER_KEY")
 	if privKeyString != "" {
+		if strings.HasPrefix(privKeyString, "0x") || strings.HasPrefix(privKeyString, "0X") {
+			privKeyString = privKeyString[2:]
+		}
 		privKey, err = crypto.HexToECDSA(privKeyString)
 		if err != nil {
 			fccutils.FatalWithCause(err)
@@ -44,7 +47,7 @@ func main() {
 
 	keySource := "EXTENSION_OWNER_KEY"
 	if privKeyString == "" {
-		keySource = "PRIV_KEY (default)"
+		keySource = "DEPLOYMENT_PRIVATE_KEY (default)"
 	}
 	logger.Infof("Using key: %s (deployer: %s)", keySource, crypto.PubkeyToAddress(privKey.PublicKey).Hex())
 

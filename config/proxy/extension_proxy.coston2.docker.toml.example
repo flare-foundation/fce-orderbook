@@ -1,6 +1,6 @@
 # Docker-specific Coston2 proxy config. Service names instead of localhost.
 redis_port = "redis:6379"
-private_key_variable = "PRIVATE_KEY"
+private_key_variable = "PROXY_PRIVATE_KEY"
 initial_signing_policy_offset = 0
 signing_policy_fetch_interval = "20s"
 
@@ -31,3 +31,7 @@ cycle_queue_response_wait = "2s"
 [voting]
 proposal_expiration = "12s"
 max_pending_request = 10000
+
+[direct]
+enable = true
+api_key_variable = "DIRECT_API_KEY"

@@ -29,7 +29,7 @@ A working Hello World example for building Flare Confidential Compute (FCC) exte
 ├── scripts/
 │   ├── full-setup.sh                  # Chains all phases: pre-build → docker compose → post-build → test
 │   ├── pre-build.sh                   # Compile + deploy + register → writes config
-│   ├── post-build.sh                  # Allow TEE version + register TEE on-chain
+│   ├── post-build.sh                  # Allow TEE version + register TEE + set extension ID on contract
 │   ├── test.sh                        # Send instructions + verify results
 │   └── generate-bindings.sh           # Compile contract → generate Go bindings
 ├── cmd/
@@ -62,14 +62,14 @@ A working Hello World example for building Flare Confidential Compute (FCC) exte
 |----------|---------|-------------|
 | `ADDRESSES_FILE` | auto-detected | Path to `deployed-addresses.json` |
 | `CHAIN_URL` | `http://127.0.0.1:8545` | Chain RPC endpoint |
-| `PRIV_KEY` | Hardhat dev key | Funded private key for transactions |
-| `PRIVATE_KEY` | Hardhat dev key | Proxy signing key (used by start-services) |
+| `DEPLOYMENT_PRIVATE_KEY` | Hardhat dev key | Funded private key for transactions |
+| `PROXY_PRIVATE_KEY` | Hardhat dev key | Proxy signing key (used by start-services) |
 | `EXTENSION_ID` | from `config/extension.env` | Extension ID (bytes32 hex, set by pre-build) |
-| `INITIAL_OWNER` | derived from `PRIV_KEY` | Initial contract owner address |
+| `INITIAL_OWNER` | derived from `DEPLOYMENT_PRIVATE_KEY` | Initial contract owner address |
 | `EXT_PROXY_URL` | `http://localhost:6674` | Extension proxy URL (post-build, test) |
 | `NORMAL_PROXY_URL` | `http://localhost:6662` | Normal/FTDC proxy URL (post-build) |
 | `TYPES_SERVER_PORT` | `8100` | Types server HTTP port |
-| `EXTENSION_OWNER_KEY` | (empty, falls back to `PRIV_KEY`) | Private key override for AddTeeVersion |
+| `EXTENSION_OWNER_KEY` | (empty, falls back to `DEPLOYMENT_PRIVATE_KEY`) | Private key override for AddTeeVersion |
 | `TEE_VERSION` | `v0.1.0` | Version string for TEE registration |
 | `LOCAL_MODE` | `true` | Skip attestation in local dev |
 | `WAIT_TIMEOUT` | `120` | Service wait timeout in seconds |
@@ -128,9 +128,10 @@ With local infrastructure running (`docker compose up` from `e2e/`), run everyth
 
 This runs the full lifecycle:
 1. **Pre-build** — compile contracts, deploy, register extension, write `config/extension.env`
-2. **Docker Compose** — start redis, proxy, and extension TEE as containers
-3. **Post-build** — register TEE version and TEE machine on-chain
-4. **Test** — send instructions and verify results
+2. **Extension setup** — deploy test tokens, write `config/pairs.json`, mint, approve
+3. **Docker Compose** — start redis, proxy, and extension TEE as containers (reads `pairs.json` at startup)
+4. **Post-build** — register TEE version and TEE machine on-chain
+5. **Test** — send instructions and verify results
 
 ## Making It Your Own
 
@@ -156,6 +157,14 @@ To override defaults:
 ```bash
 ADDRESSES_FILE=/path/to/deployed-addresses.json CHAIN_URL=http://your-node:8545 ./scripts/pre-build.sh
 ```
+
+#### 1.5. Extension setup
+
+```bash
+./scripts/extension-setup.sh
+```
+
+Deploys test ERC20 tokens, writes their addresses to `config/pairs.json`, mints tokens, and approves the InstructionSender. **This must run before Docker Compose** so the extension loads the correct trading pair config at startup.
 
 #### 2. Start services (Docker Compose)
 
@@ -185,7 +194,7 @@ docker compose down
 ./scripts/post-build.sh
 ```
 
-Waits for the proxy to be ready, then registers the TEE version and TEE machine on-chain.
+Waits for the proxy to be ready, then registers the TEE version and TEE machine on-chain, and calls `setExtensionId()` on the InstructionSender contract.
 
 #### 4. Test
 
@@ -206,6 +215,8 @@ cd tools && go run ./cmd/register-extension \
   -a /path/to/deployed-addresses.json \
   --instructionSender 0xYourContractAddress
 ```
+
+> **Note on paths:** Go tools run from the `tools/` directory. If you set `ADDRESSES_FILE` to a relative path like `./config/coston2/deployed-addresses.json` (relative to the project root), the tooling will automatically try resolving it from the parent directory as a fallback. However, using **absolute paths** or running via the provided scripts (which resolve paths automatically) is the most reliable approach.
 
 You can also run binding generation standalone:
 
@@ -315,9 +326,9 @@ Key values to set:
 
 | Variable | Value | Notes |
 |----------|-------|-------|
-| `PRIV_KEY` | Your funded Coston2 private key | Used for contract deployments and on-chain calls |
-| `INITIAL_OWNER` | Address derived from `PRIV_KEY` | Owner of deployed contracts |
-| `PRIVATE_KEY` | Same or different funded key | Used by the proxy for signing |
+| `DEPLOYMENT_PRIVATE_KEY` | Your funded Coston2 private key | Used for contract deployments and on-chain calls |
+| `INITIAL_OWNER` | Address derived from `DEPLOYMENT_PRIVATE_KEY` | Owner of deployed contracts |
+| `PROXY_PRIVATE_KEY` | Same or different funded key | Used by the proxy for signing |
 | `CHAIN_URL` | `https://coston2-api.flare.network/ext/C/rpc` | Coston2 RPC endpoint |
 | `ADDRESSES_FILE` | `./config/coston2/deployed-addresses.json` | Pre-populated with Coston2 contract addresses |
 | `LOCAL_MODE` | `false` | **Must be `false`** on live networks (enables attestation) |
@@ -395,7 +406,7 @@ docker compose -f docker-compose.yaml -f docker-compose.coston2.yaml logs -f ext
 ./scripts/post-build.sh
 ```
 
-This registers the TEE version and TEE machine on-chain. It reads `EXT_PROXY_URL` and `NORMAL_PROXY_URL` from your `.env`, so make sure ngrok is running and the URL is correct.
+This registers the TEE version and TEE machine on-chain, and calls `setExtensionId()` on the InstructionSender contract. It reads `EXT_PROXY_URL` and `NORMAL_PROXY_URL` from your `.env`, so make sure ngrok is running and the URL is correct.
 
 ### 7. Test
 

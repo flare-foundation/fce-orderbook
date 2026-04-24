@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -67,6 +68,18 @@ type Addresses struct {
 }
 
 func DefaultSupport(AddressesFilePath, chainNodeURL string) (*Support, error) {
+	// Resolve relative paths: when running from tools/, a path like
+	// ./config/coston2/deployed-addresses.json (relative to project root)
+	// won't exist. Try one directory up (project root) as a fallback.
+	if !filepath.IsAbs(AddressesFilePath) {
+		if _, err := os.Stat(AddressesFilePath); os.IsNotExist(err) {
+			candidate := filepath.Join("..", AddressesFilePath)
+			if _, err2 := os.Stat(candidate); err2 == nil {
+				AddressesFilePath = candidate
+			}
+		}
+	}
+
 	addr := &Addresses{}
 	err := configs.ReadAddresses(AddressesFilePath, addr)
 	if err != nil {
@@ -90,13 +103,17 @@ func DefaultSupport(AddressesFilePath, chainNodeURL string) (*Support, error) {
 }
 
 func DefaultPrivateKey() (*ecdsa.PrivateKey, error) {
+	// Try .env in cwd first, fall back to parent directory (project root
+	// when running from tools/).
 	if err := godotenv.Load(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Error loading .env file: %v\n", err)
+		if err2 := godotenv.Load(filepath.Join("..", ".env")); err2 != nil {
+			fmt.Fprintf(os.Stderr, "Warning: No .env file found (checked . and ..): %v\n", err)
+		}
 	}
-	privKeyString := os.Getenv("PRIV_KEY")
+	privKeyString := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
 
 	if privKeyString == "" {
-		fmt.Fprintln(os.Stderr, "WARNING: PRIV_KEY not set — using hardcoded Hardhat dev key")
+		fmt.Fprintln(os.Stderr, "WARNING: DEPLOYMENT_PRIVATE_KEY not set — using hardcoded Hardhat dev key")
 		fmt.Fprintln(os.Stderr, "         This key only has funds on local devnets (Hardhat/Anvil)")
 		return configs.PrvWithFunds, nil
 	} else {

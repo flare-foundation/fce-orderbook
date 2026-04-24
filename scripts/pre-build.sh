@@ -4,7 +4,7 @@
 # Inputs (env vars):
 #   ADDRESSES_FILE  — path to deployed-addresses.json (auto-detected if unset)
 #   CHAIN_URL       — chain RPC URL (default: http://127.0.0.1:8545)
-#   PRIV_KEY        — funded private key (default: Hardhat account)
+#   DEPLOYMENT_PRIVATE_KEY — funded private key (default: Hardhat account)
 #
 # Outputs:
 #   config/extension.env — EXTENSION_ID and INSTRUCTION_SENDER
@@ -71,16 +71,18 @@ ADDRESSES_FILE="$(cd "$(dirname "$ADDRESSES_FILE")" && pwd)/$(basename "$ADDRESS
 log "Chain URL:      $CHAIN_URL"
 log "Addresses file: $ADDRESSES_FILE"
 
-# --- Step 0: Pre-flight check ---
-step 0 "Pre-flight check"
+# --- Step 0: Generate Go bindings from Solidity contract ---
+# Must run before any `go run` — the generated bindings are .gitignored
+# and won't exist on a fresh clone.
+step 0 "Generate Go bindings"
+"$SCRIPT_DIR/generate-bindings.sh" || die "Binding generation failed"
+
+# --- Step 1: Pre-flight check ---
+step 1 "Pre-flight check"
 cd "$PROJECT_DIR/tools"
 if ! go run ./cmd/deploy-contract -a "$ADDRESSES_FILE" -c "$CHAIN_URL" --preflight-only 2>&1; then
     die "Pre-flight check failed — fix the issues above before deploying"
 fi
-
-# --- Step 1: Generate Go bindings from Solidity contract ---
-step 1 "Generate Go bindings"
-"$SCRIPT_DIR/generate-bindings.sh" || die "Binding generation failed"
 
 # --- Step 2: Deploy InstructionSender ---
 step 2 "Deploy InstructionSender contract"

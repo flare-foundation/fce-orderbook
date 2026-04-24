@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"time"
 
-	"extension-scaffold/tools/pkg/contracts/helloworld"
+	"extension-scaffold/tools/pkg/contracts/orderbook"
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/support"
 
@@ -16,14 +16,17 @@ import (
 	"github.com/pkg/errors"
 )
 
-func DeployInstructionSender(s *support.Support) (common.Address, *helloworld.HelloWorldInstructionSender, error) {
+func DeployInstructionSender(s *support.Support) (common.Address, *orderbook.OrderbookInstructionSender, error) {
 	opts, err := bind.NewKeyedTransactorWithChainID(s.Prv, s.ChainID)
 	if err != nil {
 		return common.Address{}, nil, errors.Errorf("failed to create transactor: %s", err)
 	}
 
-	address, tx, contract, err := helloworld.DeployHelloWorldInstructionSender(
-		opts, s.ChainClient, s.Addresses.TeeExtensionRegistry, s.Addresses.TeeMachineRegistry,
+	deployer := crypto.PubkeyToAddress(s.Prv.PublicKey)
+	admins := []common.Address{deployer}
+
+	address, tx, contract, err := orderbook.DeployOrderbookInstructionSender(
+		opts, s.ChainClient, s.Addresses.TeeExtensionRegistry, s.Addresses.TeeMachineRegistry, admins,
 	)
 	if err != nil {
 		return common.Address{}, nil, errors.Errorf("failed to deploy contract: %s", err)
@@ -44,7 +47,7 @@ func DeployInstructionSender(s *support.Support) (common.Address, *helloworld.He
 }
 
 func SetExtensionId(s *support.Support, instructionSenderAddress common.Address) error {
-	sender, err := helloworld.NewHelloWorldInstructionSender(instructionSenderAddress, s.ChainClient)
+	sender, err := orderbook.NewOrderbookInstructionSender(instructionSenderAddress, s.ChainClient)
 	if err != nil {
 		return errors.Errorf("failed to bind contract: %s", err)
 	}
@@ -58,7 +61,7 @@ func SetExtensionId(s *support.Support, instructionSenderAddress common.Address)
 	if err != nil {
 		reason := fccutils.DecodeRevertReason(err)
 		if reason == "" {
-			parsed, _ := helloworld.HelloWorldInstructionSenderMetaData.GetAbi()
+			parsed, _ := orderbook.OrderbookInstructionSenderMetaData.GetAbi()
 			if parsed != nil {
 				callData, packErr := parsed.Pack("setExtensionId")
 				if packErr == nil {
@@ -81,7 +84,7 @@ func SetExtensionId(s *support.Support, instructionSenderAddress common.Address)
 	}
 
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		parsed, _ := helloworld.HelloWorldInstructionSenderMetaData.GetAbi()
+		parsed, _ := orderbook.OrderbookInstructionSenderMetaData.GetAbi()
 		if parsed != nil {
 			callData, packErr := parsed.Pack("setExtensionId")
 			if packErr == nil {
@@ -100,8 +103,8 @@ func SetExtensionId(s *support.Support, instructionSenderAddress common.Address)
 	return nil
 }
 
-func SendSayHello(s *support.Support, instructionSenderAddress common.Address, message []byte) (common.Hash, common.Hash, error) {
-	sender, err := helloworld.NewHelloWorldInstructionSender(instructionSenderAddress, s.ChainClient)
+func Deposit(s *support.Support, instructionSenderAddress common.Address, token common.Address, amount *big.Int) (common.Hash, common.Hash, error) {
+	sender, err := orderbook.NewOrderbookInstructionSender(instructionSenderAddress, s.ChainClient)
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to bind contract: %s", err)
 	}
@@ -110,15 +113,15 @@ func SendSayHello(s *support.Support, instructionSenderAddress common.Address, m
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to create transactor: %s", err)
 	}
-	opts.Value = big.NewInt(1000000) // Instruction fee in wei — must match registry's required fee
+	opts.Value = big.NewInt(1000000) // Instruction fee in wei
 
-	tx, err := sender.SendSayHello(opts, message)
+	tx, err := sender.Deposit(opts, token, amount)
 	if err != nil {
 		reason := fccutils.DecodeRevertReason(err)
 		if reason == "" {
-			parsed, _ := helloworld.HelloWorldInstructionSenderMetaData.GetAbi()
+			parsed, _ := orderbook.OrderbookInstructionSenderMetaData.GetAbi()
 			if parsed != nil {
-				callData, packErr := parsed.Pack("sendSayHello", message)
+				callData, packErr := parsed.Pack("deposit", token, amount)
 				if packErr == nil {
 					from := crypto.PubkeyToAddress(s.Prv.PublicKey)
 					reason = fccutils.SimulateAndDecodeRevert(
@@ -129,20 +132,22 @@ func SendSayHello(s *support.Support, instructionSenderAddress common.Address, m
 			}
 		}
 		if reason != "" {
-			return common.Hash{}, common.Hash{}, errors.Errorf("failed to send instruction: %s (revert reason: %s)", err, reason)
+			return common.Hash{}, common.Hash{}, errors.Errorf("failed to send deposit: %s (revert reason: %s)", err, reason)
 		}
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send instruction: %s", err)
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send deposit: %s", err)
 	}
 
-	receipt, err := bind.WaitMined(context.Background(), s.ChainClient, tx)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	receipt, err := bind.WaitMined(ctx, s.ChainClient, tx)
 	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed waiting for transaction: %s", err)
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed waiting for deposit tx (tx: %s): %s", tx.Hash().Hex(), err)
 	}
 
 	if receipt.Status != 1 {
-		parsed, _ := helloworld.HelloWorldInstructionSenderMetaData.GetAbi()
+		parsed, _ := orderbook.OrderbookInstructionSenderMetaData.GetAbi()
 		if parsed != nil {
-			callData, packErr := parsed.Pack("sendSayHello", message)
+			callData, packErr := parsed.Pack("deposit", token, amount)
 			if packErr == nil {
 				from := crypto.PubkeyToAddress(s.Prv.PublicKey)
 				reason := fccutils.SimulateAndDecodeRevert(
@@ -150,27 +155,23 @@ func SendSayHello(s *support.Support, instructionSenderAddress common.Address, m
 					big.NewInt(1000000), callData,
 				)
 				if reason != "" {
-					return common.Hash{}, common.Hash{}, errors.Errorf("transaction failed with status %d (revert reason: %s)", receipt.Status, reason)
+					return common.Hash{}, common.Hash{}, errors.Errorf("deposit tx failed (revert reason: %s)", reason)
 				}
 			}
 		}
-		return common.Hash{}, common.Hash{}, errors.Errorf("transaction failed with status: %d", receipt.Status)
+		return common.Hash{}, common.Hash{}, errors.Errorf("deposit tx failed with status: %d", receipt.Status)
 	}
 
-	if len(receipt.Logs) == 0 {
-		return common.Hash{}, common.Hash{}, errors.New("no logs found in receipt")
-	}
-
-	instructionSent, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*receipt.Logs[0])
+	instructionID, err := findInstructionID(s, receipt)
 	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to parse TeeInstructionsSent event: %s", err)
+		return common.Hash{}, common.Hash{}, err
 	}
 
-	return instructionSent.InstructionId, receipt.TxHash, nil
+	return instructionID, receipt.TxHash, nil
 }
 
-func SendSayGoodbye(s *support.Support, instructionSenderAddress common.Address, name string, reason string) (common.Hash, common.Hash, error) {
-	sender, err := helloworld.NewHelloWorldInstructionSender(instructionSenderAddress, s.ChainClient)
+func Withdraw(s *support.Support, instructionSenderAddress common.Address, token common.Address, amount *big.Int, to common.Address) (common.Hash, common.Hash, error) {
+	sender, err := orderbook.NewOrderbookInstructionSender(instructionSenderAddress, s.ChainClient)
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to bind contract: %s", err)
 	}
@@ -179,30 +180,45 @@ func SendSayGoodbye(s *support.Support, instructionSenderAddress common.Address,
 	if err != nil {
 		return common.Hash{}, common.Hash{}, errors.Errorf("failed to create transactor: %s", err)
 	}
-	opts.Value = big.NewInt(1000000) // Instruction fee in wei — must match registry's required fee
+	opts.Value = big.NewInt(1000000) // Instruction fee in wei
 
-	tx, err := sender.SendSayGoodbye(opts, name, reason)
+	tx, err := sender.Withdraw(opts, token, amount, to)
 	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send instruction: %s", err)
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed to send withdraw: %s", err)
 	}
 
-	receipt, err := bind.WaitMined(context.Background(), s.ChainClient, tx)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	receipt, err := bind.WaitMined(ctx, s.ChainClient, tx)
 	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed waiting for transaction: %s", err)
+		return common.Hash{}, common.Hash{}, errors.Errorf("failed waiting for withdraw tx (tx: %s): %s", tx.Hash().Hex(), err)
 	}
 
 	if receipt.Status != 1 {
-		return common.Hash{}, common.Hash{}, errors.Errorf("transaction failed with status: %d", receipt.Status)
+		return common.Hash{}, common.Hash{}, errors.Errorf("withdraw tx failed with status: %d", receipt.Status)
 	}
 
-	if len(receipt.Logs) == 0 {
-		return common.Hash{}, common.Hash{}, errors.New("no logs found in receipt")
-	}
-
-	instructionSent, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*receipt.Logs[0])
+	instructionID, err := findInstructionID(s, receipt)
 	if err != nil {
-		return common.Hash{}, common.Hash{}, errors.Errorf("failed to parse TeeInstructionsSent event: %s", err)
+		return common.Hash{}, common.Hash{}, err
 	}
 
-	return instructionSent.InstructionId, receipt.TxHash, nil
+	return instructionID, receipt.TxHash, nil
+}
+
+// findInstructionID iterates through receipt logs to find the TeeInstructionsSent
+// event. The event may not be the first log (e.g. ERC20 Transfer events precede it).
+func findInstructionID(s *support.Support, receipt *types.Receipt) (common.Hash, error) {
+	if len(receipt.Logs) == 0 {
+		return common.Hash{}, errors.New("no logs found in receipt")
+	}
+
+	for _, log := range receipt.Logs {
+		instructionSent, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*log)
+		if err == nil {
+			return instructionSent.InstructionId, nil
+		}
+	}
+
+	return common.Hash{}, errors.New("TeeInstructionsSent event not found in receipt logs")
 }

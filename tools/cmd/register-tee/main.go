@@ -6,6 +6,7 @@ import (
 	"extension-scaffold/tools/pkg/fccutils"
 	"extension-scaffold/tools/pkg/support"
 	"flag"
+	"os"
 
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 )
@@ -19,8 +20,16 @@ func main() {
 	instructionF := flag.String("i", "", "instructionID")
 	command := flag.String("command", "rap", "command (rap)")
 	stateFile := flag.String("state", "../config/register-tee.state", "state file for resume support")
+	resume := flag.Bool("resume", false, "resume from state file (default: start fresh)")
 
 	flag.Parse()
+
+	// Default: start fresh. Only resume if --resume is explicitly passed.
+	if !*resume {
+		if err := os.Remove(*stateFile); err != nil && !os.IsNotExist(err) {
+			logger.Warnf("WARNING: failed to remove stale state file: %v", err)
+		}
+	}
 
 	testSupport, err := support.DefaultSupport(*af, *cf)
 	if err != nil {

@@ -70,22 +70,22 @@ func TestKeyHasFunds_NilClient(t *testing.T) {
 }
 
 func TestIsUsingDevKey_WhenSet(t *testing.T) {
-	original := os.Getenv("PRIV_KEY")
-	defer os.Setenv("PRIV_KEY", original)
+	original := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
+	defer os.Setenv("DEPLOYMENT_PRIVATE_KEY", original)
 
-	os.Setenv("PRIV_KEY", "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+	os.Setenv("DEPLOYMENT_PRIVATE_KEY", "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
 	if IsUsingDevKey() {
-		t.Error("expected IsUsingDevKey() to return false when PRIV_KEY is set")
+		t.Error("expected IsUsingDevKey() to return false when DEPLOYMENT_PRIVATE_KEY is set")
 	}
 }
 
 func TestIsUsingDevKey_WhenUnset(t *testing.T) {
-	original := os.Getenv("PRIV_KEY")
-	defer os.Setenv("PRIV_KEY", original)
+	original := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
+	defer os.Setenv("DEPLOYMENT_PRIVATE_KEY", original)
 
-	os.Unsetenv("PRIV_KEY")
+	os.Unsetenv("DEPLOYMENT_PRIVATE_KEY")
 	if !IsUsingDevKey() {
-		t.Error("expected IsUsingDevKey() to return true when PRIV_KEY is unset")
+		t.Error("expected IsUsingDevKey() to return true when DEPLOYMENT_PRIVATE_KEY is unset")
 	}
 }
 
@@ -119,9 +119,9 @@ func TestAddressNotZero_ErrorContainsHexAddress(t *testing.T) {
 }
 
 func TestIsUsingDevKey_WhenEmpty(t *testing.T) {
-	t.Setenv("PRIV_KEY", "")
+	t.Setenv("DEPLOYMENT_PRIVATE_KEY", "")
 	if !IsUsingDevKey() {
-		t.Error("expected IsUsingDevKey() to return true when PRIV_KEY is empty string")
+		t.Error("expected IsUsingDevKey() to return true when DEPLOYMENT_PRIVATE_KEY is empty string")
 	}
 }
 

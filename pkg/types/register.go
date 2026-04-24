@@ -2,27 +2,75 @@ package types
 
 import "extension-scaffold/pkg/decoder"
 
-// RegisterDecoders registers all type decoders for this extension.
-// Extension developers: add new registrations here for each OPType/OPCommand.
+// RegisterDecoders registers all type decoders for the orderbook extension.
 func RegisterDecoders(r *decoder.Registry) {
-	// SAY_HELLO message (JSON)
+	// DEPOSIT message + result
 	r.Register(
-		decoder.RegistryKey{OPType: "GREETING", OPCommand: "SAY_HELLO", Kind: decoder.KindMessage},
-		decoder.NewJSONDecoder[SayHelloRequest](),
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "DEPOSIT", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[DepositRequest](),
 	)
-	// SAY_HELLO result (JSON)
 	r.Register(
-		decoder.RegistryKey{OPType: "GREETING", OPCommand: "SAY_HELLO", Kind: decoder.KindResult},
-		decoder.NewJSONDecoder[SayHelloResponse](),
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "DEPOSIT", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[DepositResponse](),
 	)
-	// SAY_GOODBYE message (ABI-encoded)
+
+	// WITHDRAW message + result
 	r.Register(
-		decoder.RegistryKey{OPType: "GREETING", OPCommand: "SAY_GOODBYE", Kind: decoder.KindMessage},
-		decoder.NewABIDecoder[SayGoodbyeRequest](SayGoodbyeMessageArg),
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "WITHDRAW", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[WithdrawRequest](),
 	)
-	// SAY_GOODBYE result (JSON)
 	r.Register(
-		decoder.RegistryKey{OPType: "GREETING", OPCommand: "SAY_GOODBYE", Kind: decoder.KindResult},
-		decoder.NewJSONDecoder[SayGoodbyeResponse](),
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "WITHDRAW", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[WithdrawResponse](),
+	)
+
+	// PLACE_ORDER message + result
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "PLACE_ORDER", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[PlaceOrderRequest](),
+	)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "PLACE_ORDER", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[PlaceOrderResponse](),
+	)
+
+	// CANCEL_ORDER message + result
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "CANCEL_ORDER", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[CancelOrderRequest](),
+	)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "CANCEL_ORDER", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[CancelOrderResponse](),
+	)
+
+	// GET_MY_STATE (request + result)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_MY_STATE", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[GetMyStateRequest](),
+	)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_MY_STATE", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[GetMyStateResponse](),
+	)
+
+	// GET_BOOK_STATE (request + result — response reuses StateResponse)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_BOOK_STATE", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[GetBookStateRequest](),
+	)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_BOOK_STATE", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[StateResponse](),
+	)
+
+	// EXPORT_HISTORY message + result
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "EXPORT_HISTORY", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[ExportHistoryRequest](),
+	)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "EXPORT_HISTORY", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[ExportHistoryResponse](),
 	)
 }
