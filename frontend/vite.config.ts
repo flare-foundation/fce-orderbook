@@ -1,22 +1,17 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      "/direct": {
-        target: process.env.VITE_PROXY_UPSTREAM || "http://localhost:6674",
-        changeOrigin: true,
-      },
-      "/state": {
-        target: process.env.VITE_PROXY_UPSTREAM || "http://localhost:6674",
-        changeOrigin: true,
-      },
-      "/action": {
-        target: process.env.VITE_PROXY_UPSTREAM || "http://localhost:6674",
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "VITE_");
+  const upstream = env.VITE_PROXY_UPSTREAM || "http://localhost:6674";
+  return {
+    plugins: [react()],
+    server: {
+      proxy: {
+        "/direct": { target: upstream, changeOrigin: true },
+        "/state": { target: upstream, changeOrigin: true },
+        "/action": { target: upstream, changeOrigin: true },
       },
     },
-  },
+  };
 });
