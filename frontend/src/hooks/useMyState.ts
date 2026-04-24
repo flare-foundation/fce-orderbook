@@ -9,7 +9,24 @@ export function useMyState() {
 
   const query = useQuery<GetMyStateResp>({
     queryKey: ["myState", address],
-    queryFn: () => getMyState(address!.toLowerCase()),
+    queryFn: async () => {
+      const sender = address!.toLowerCase();
+      console.log("[useMyState] fetching GET_MY_STATE", { sender });
+      try {
+        const resp = await getMyState(sender);
+        console.log("[useMyState] response", {
+          sender,
+          balanceKeys: Object.keys(resp.balances ?? {}),
+          balances: resp.balances,
+          openOrdersCount: resp.openOrders?.length ?? 0,
+          matchesCount: resp.matches?.length ?? 0,
+        });
+        return resp;
+      } catch (err) {
+        console.error("[useMyState] GET_MY_STATE failed", err);
+        throw err;
+      }
+    },
     enabled: !!address,
     refetchInterval: 3000,
     retry: false,

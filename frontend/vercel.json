@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/direct/:path*",
-      "destination": "https://tee-proxy-coston2-orderbook.flare.rocks/direct/:path*"
-    },
-    {
       "source": "/direct",
       "destination": "https://tee-proxy-coston2-orderbook.flare.rocks/direct"
     },
