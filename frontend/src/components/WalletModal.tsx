@@ -7,7 +7,8 @@ import { useFaucet } from '../hooks/useFaucet';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { useMyState } from '../hooks/useMyState';
 import { useToast } from './ui/Toast';
-import { PAIRS, INSTRUCTION_SENDER } from '../config/generated';
+import { PAIRS } from '../config/generated';
+import { INSTRUCTION_SENDER } from '../config/addresses';
 
 type Tab = 'FAUCET' | 'DEPOSIT' | 'WITHDRAW' | 'HISTORY';
 
