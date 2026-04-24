@@ -23,6 +23,8 @@ tools/pkg/contracts/*/autogen.go
 tools/pkg/contracts/*/*.abi
 tools/pkg/contracts/*/*.bin
 
+tools/traders.json
+
 docs/superpowers
 
 notes/

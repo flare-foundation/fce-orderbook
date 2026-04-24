@@ -12,6 +12,7 @@
 #   LOCAL_MODE          — skip attestation (default: true)
 #   WAIT_TIMEOUT        — service wait timeout in seconds (default: 120)
 #   EXTENSION_OWNER_KEY — private key override for AddTeeVersion (optional)
+#   SKIP_ALLOW_VERSION  — skip step 1 if version already registered on-chain (default: false)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -58,6 +59,7 @@ fi
 TEE_VERSION="${TEE_VERSION:-v0.1.0}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-120}"
+SKIP_ALLOW_VERSION="${SKIP_ALLOW_VERSION:-false}"
 
 # --- Auto-detect addresses file ---
 if [[ -z "$ADDRESSES_FILE" ]]; then
@@ -121,16 +123,20 @@ wait_for_url() {
 wait_for_url "$EXT_PROXY_URL/info" "Extension proxy"
 wait_for_url "$NORMAL_PROXY_URL/info" "Normal proxy"
 
-# --- Step 1: Allow TEE version on extension ---
-step 1 "Allow TEE version"
 cd "$PROJECT_DIR/tools"
 
-go run ./cmd/allow-tee-version \
-    -a "$ADDRESSES_FILE" \
-    -c "$CHAIN_URL" \
-    -p "$EXT_PROXY_URL" \
-    -version "$TEE_VERSION" \
-    || die "Allow TEE version failed"
+# --- Step 1: Allow TEE version on extension ---
+step 1 "Allow TEE version"
+if [[ "$SKIP_ALLOW_VERSION" == "true" ]]; then
+    log "SKIP_ALLOW_VERSION=true — skipping (version assumed already registered on-chain)"
+else
+    go run ./cmd/allow-tee-version \
+        -a "$ADDRESSES_FILE" \
+        -c "$CHAIN_URL" \
+        -p "$EXT_PROXY_URL" \
+        -version "$TEE_VERSION" \
+        || die "Allow TEE version failed (set SKIP_ALLOW_VERSION=true to skip if already registered)"
+fi
 
 # Export SIMULATED_TEE for register-tee (controls attestation mode)
 export SIMULATED_TEE="${SIMULATED_TEE:-true}"
