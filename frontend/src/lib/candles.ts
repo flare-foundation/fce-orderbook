@@ -1,4 +1,4 @@
-import type { BookMatch } from "./orderbook";
+import type { BookMatch, ServerCandle } from "./orderbook";
 import { formatPrice } from "./price";
 
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1D";
@@ -81,6 +81,57 @@ export function bucketMatches(
     if (c) {
       out.push(c);
       prevClose = c.close;
+    } else {
+      out.push({
+        time: t,
+        open: prevClose,
+        high: prevClose,
+        low: prevClose,
+        close: prevClose,
+        volume: 0,
+      });
+    }
+  }
+
+  return out.length > maxCandles ? out.slice(out.length - maxCandles) : out;
+}
+
+/**
+ * Convert server-side OHLCV candles into chart Candles. Empty intervals between
+ * server candles are gap-filled with flat candles carrying the previous close,
+ * so a sparse market still draws as a continuous chart.
+ */
+export function fromServerCandles(
+  serverCandles: ServerCandle[],
+  tf: Timeframe,
+  maxCandles = 240,
+): Candle[] {
+  if (!serverCandles.length) return [];
+
+  const step = TF_SECONDS[tf];
+  const sorted = [...serverCandles].sort((a, b) => a.openTime - b.openTime);
+
+  const first = sorted[0].openTime;
+  const last = sorted[sorted.length - 1].openTime;
+
+  const byTime = new Map<number, ServerCandle>();
+  for (const c of sorted) byTime.set(c.openTime, c);
+
+  const out: Candle[] = [];
+  let prevClose = formatPrice(sorted[0].open);
+  for (let t = first; t <= last; t += step) {
+    const c = byTime.get(t);
+    if (c) {
+      const close = formatPrice(c.close);
+      out.push({
+        time: t,
+        open: formatPrice(c.open),
+        high: formatPrice(c.high),
+        low: formatPrice(c.low),
+        close,
+        volume: c.volume,
+      });
+      prevClose = close;
     } else {
       out.push({
         time: t,

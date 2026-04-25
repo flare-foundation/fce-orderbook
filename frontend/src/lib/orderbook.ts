@@ -1,6 +1,6 @@
 /**
  * orderbook.ts — typed wrappers for orderbook direct instructions.
- * Mirrors the request/response types from tools/cmd/test-orders/main.go.
+ * Mirrors the request/response types in internal/extension and pkg/types.
  */
 
 import { sendDirectAndPoll } from "./teeClient";
@@ -27,6 +27,15 @@ export interface GetMyStateReq {
 
 export interface GetBookStateReq {
   sender?: string;
+  pair?: string;
+  matchLimit?: number;
+}
+
+export interface GetCandlesReq {
+  sender?: string;
+  pair: string;
+  timeframe: string;
+  limit?: number;
 }
 
 // --- Response types ---
@@ -93,8 +102,25 @@ export interface BookStateResp {
   state: {
     pairs: Record<string, PairState>;
     matchCount: number;
-    matches: BookMatch[];
+    /** Newest-first, scoped to the requested pair. Empty when no pair was passed. */
+    matches?: BookMatch[];
   };
+}
+
+export interface ServerCandle {
+  openTime: number; // unix seconds
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  trades: number;
+}
+
+export interface CandlesResp {
+  pair: string;
+  timeframe: string;
+  candles: ServerCandle[]; // oldest-first
 }
 
 // --- API wrappers ---
@@ -111,6 +137,10 @@ export function getMyState(sender: string): Promise<GetMyStateResp> {
   return sendDirectAndPoll<GetMyStateResp>("GET_MY_STATE", { sender });
 }
 
-export function getBookState(sender?: string): Promise<BookStateResp> {
-  return sendDirectAndPoll<BookStateResp>("GET_BOOK_STATE", { sender });
+export function getBookState(req: GetBookStateReq = {}): Promise<BookStateResp> {
+  return sendDirectAndPoll<BookStateResp>("GET_BOOK_STATE", req);
+}
+
+export function getCandles(req: GetCandlesReq): Promise<CandlesResp> {
+  return sendDirectAndPoll<CandlesResp>("GET_CANDLES", req);
 }

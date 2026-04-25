@@ -22,6 +22,7 @@ const (
 	OPCommandCancelOrder   = "CANCEL_ORDER"
 	OPCommandGetMyState    = "GET_MY_STATE"
 	OPCommandGetBookState  = "GET_BOOK_STATE"
+	OPCommandGetCandles    = "GET_CANDLES"
 	OPCommandExportHistory = "EXPORT_HISTORY"
 
 	TimeoutShutdown = 5 * time.Second

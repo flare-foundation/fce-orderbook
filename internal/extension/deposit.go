@@ -35,13 +35,12 @@ func (e *Extension) processDeposit(action teetypes.Action, df *instruction.DataF
 		return buildResult(action, df, nil, 0, fmt.Errorf("crediting balance: %w", err))
 	}
 
-	// Record in history.
 	e.mu.Lock()
-	e.history.deposits[user] = append(e.history.deposits[user], types.DepositRecord{
+	e.history.deposits[user] = appendBounded(e.history.deposits[user], types.DepositRecord{
 		Token:     token,
 		Amount:    amount,
 		Timestamp: time.Now().UnixNano(),
-	})
+	}, MaxUserDepositsHistory)
 	e.mu.Unlock()
 
 	bal := e.balances.Get(user, token)

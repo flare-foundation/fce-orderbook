@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"extension-scaffold/internal/config"
+	"extension-scaffold/pkg/orderbook"
 	"extension-scaffold/pkg/types"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -14,14 +15,25 @@ import (
 )
 
 // processGetBookState handles GET_BOOK_STATE direct instructions.
-// Returns the public orderbook depth and recent matches — same payload as the
-// internal GET /state HTTP endpoint, but reachable through the TEE proxy.
+//
+// Always returns depth for every configured pair (depth is bounded by MaxLevelsPerSide).
+// If req.Pair is set and known, also returns the most recent matches for that pair,
+// newest-first, capped at min(req.MatchLimit | DefaultBookMatchLimit, ring size).
+// If req.Pair is empty, no matches are included.
 func (e *Extension) processGetBookState(action teetypes.Action, df *instruction.DataFixed, msg hexutil.Bytes) teetypes.ActionResult {
+	var req types.GetBookStateRequest
 	if len(msg) > 0 {
-		var req types.GetBookStateRequest
 		if err := json.Unmarshal(msg, &req); err != nil {
 			return buildResult(action, df, nil, 0, fmt.Errorf("decoding request: %w", err))
 		}
+	}
+
+	limit := req.MatchLimit
+	if limit <= 0 {
+		limit = DefaultBookMatchLimit
+	}
+	if limit > MaxMatchesPerPair {
+		limit = MaxMatchesPerPair
 	}
 
 	e.mu.RLock()
@@ -30,15 +42,28 @@ func (e *Extension) processGetBookState(action teetypes.Action, df *instruction.
 		bids, asks := ob.Depth()
 		pairStates[name] = types.PairState{Bids: bids, Asks: asks}
 	}
+
+	var matches []orderbook.Match
+	var matchCount int
+	if req.Pair != "" {
+		ring, ok := e.matchesByPair[req.Pair]
+		if !ok {
+			e.mu.RUnlock()
+			return buildResult(action, df, nil, 0, fmt.Errorf("unknown pair: %s", req.Pair))
+		}
+		matchCount = ring.Len()
+		matches = ring.SnapshotNewestFirst(limit)
+	}
+	e.mu.RUnlock()
+
 	resp := types.StateResponse{
 		StateVersion: teeutils.ToHash(config.Version),
 		State: types.State{
 			Pairs:      pairStates,
-			MatchCount: len(e.matches),
-			Matches:    e.matches,
+			MatchCount: matchCount,
+			Matches:    matches,
 		},
 	}
-	e.mu.RUnlock()
 
 	data, _ := json.Marshal(resp)
 	return buildResult(action, df, data, 1, nil)

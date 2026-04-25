@@ -25,8 +25,8 @@ export function RecentTrades({ pair }: RecentTradesProps) {
     ? tokenInfo[pairConfig.baseToken.toLowerCase()]?.decimals
     : undefined;
 
-  // newest first, max 40
-  const recent = [...matches].reverse().slice(0, 40);
+  // matches arrive newest-first from the backend; cap at 40 for display.
+  const recent = matches.slice(0, 40);
 
   function fmtQty(raw: number): string {
     if (baseDecimals === undefined) return String(raw);
