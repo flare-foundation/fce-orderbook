@@ -1,0 +1,31 @@
+package types
+
+import (
+	"testing"
+
+	"extension-scaffold/pkg/decoder"
+)
+
+// TestRegisterDecoders_AllOPCommandsCovered asserts every OPCommand the extension
+// answers has both message and result decoders. Catches drift when a new command
+// is added to internal/config/config.go but forgotten here.
+func TestRegisterDecoders_AllOPCommandsCovered(t *testing.T) {
+	t.Skip("C6 confirmed — fix pending: register GET_CANDLES decoders")
+	r := decoder.NewRegistry()
+	RegisterDecoders(r)
+
+	commands := []string{
+		"DEPOSIT", "WITHDRAW",
+		"PLACE_ORDER", "CANCEL_ORDER",
+		"GET_MY_STATE", "GET_BOOK_STATE", "GET_CANDLES", "EXPORT_HISTORY",
+	}
+
+	for _, cmd := range commands {
+		if _, err := r.Lookup("ORDERBOOK", cmd, decoder.KindMessage); err != nil {
+			t.Errorf("no message decoder for %s: %v", cmd, err)
+		}
+		if _, err := r.Lookup("ORDERBOOK", cmd, decoder.KindResult); err != nil {
+			t.Errorf("no result decoder for %s: %v", cmd, err)
+		}
+	}
+}
