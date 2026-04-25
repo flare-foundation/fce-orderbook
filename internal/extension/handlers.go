@@ -120,25 +120,27 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
 	e.history.orders[user] = appendBounded(e.history.orders[user], order, MaxUserHistoryOrders)
 	e.mu.Unlock()
 
-	// Enforce per-side level cap. Eviction takes ob.mu, then we refund + clean up under e.mu.
-	if order.Remaining > 0 {
-		if evicted := ob.EvictExcessLevels(MaxLevelsPerSide); len(evicted) > 0 {
-			e.handleEvictions(req.Pair, pairConfig, evicted)
-		}
-	}
-
+	// Snapshot status + remaining before eviction can mutate them.
+	preEvictRemaining := order.Remaining
 	status := "resting"
-	if order.Remaining == 0 {
+	if preEvictRemaining == 0 {
 		status = "filled"
 	} else if len(matches) > 0 {
 		status = "partial"
+	}
+
+	// Enforce per-side level cap. Eviction takes ob.mu, then we refund + clean up under e.mu.
+	if preEvictRemaining > 0 {
+		if evicted := ob.EvictExcessLevels(MaxLevelsPerSide); len(evicted) > 0 {
+			e.handleEvictions(req.Pair, pairConfig, evicted)
+		}
 	}
 
 	resp := types.PlaceOrderResponse{
 		OrderID:   order.ID,
 		Status:    status,
 		Matches:   matches,
-		Remaining: order.Remaining,
+		Remaining: preEvictRemaining,
 	}
 	data, _ := json.Marshal(resp)
 
