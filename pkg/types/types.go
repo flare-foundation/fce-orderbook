@@ -84,11 +84,29 @@ type GetMyStateResponse struct {
 }
 
 // --- Get Book State (direct instruction) ---
-// Public orderbook depth + recent matches. Same payload shape as GET /state,
-// but routed through the TEE proxy's /direct path so external clients can query it.
+// Public orderbook depth + (optional) recent matches scoped to a single pair.
+// Pair: when set, response includes the most recent matches for that pair.
+// MatchLimit: cap on returned matches; default DefaultBookMatchLimit, max ring capacity.
 
 type GetBookStateRequest struct {
-	Sender string `json:"sender,omitempty"`
+	Sender     string `json:"sender,omitempty"`
+	Pair       string `json:"pair,omitempty"`
+	MatchLimit int    `json:"matchLimit,omitempty"`
+}
+
+// --- Get Candles (direct instruction) ---
+
+type GetCandlesRequest struct {
+	Sender    string `json:"sender,omitempty"`
+	Pair      string `json:"pair"`
+	Timeframe string `json:"timeframe"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type GetCandlesResponse struct {
+	Pair      string             `json:"pair"`
+	Timeframe string             `json:"timeframe"`
+	Candles   []orderbook.Candle `json:"candles"`
 }
 
 // --- Export History (direct instruction) ---
@@ -120,12 +138,12 @@ type WithdrawalRecord struct {
 	Timestamp int64          `json:"timestamp"`
 }
 
-// --- State (public, unencrypted via GET /state) ---
+// --- State (returned by GET_BOOK_STATE) ---
 
 type State struct {
 	Pairs      map[string]PairState `json:"pairs"`
 	MatchCount int                  `json:"matchCount"`
-	Matches    []orderbook.Match    `json:"matches"`
+	Matches    []orderbook.Match    `json:"matches,omitempty"`
 }
 
 type PairState struct {

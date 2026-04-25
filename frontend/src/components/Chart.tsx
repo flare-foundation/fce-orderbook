@@ -7,8 +7,8 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { useBookState } from '../hooks/useBookState';
-import { bucketMatches, type Candle, type Timeframe, TF_SECONDS } from '../lib/candles';
+import { useCandles } from '../hooks/useCandles';
+import { fromServerCandles, type Candle, type Timeframe, TF_SECONDS } from '../lib/candles';
 
 interface ChartProps {
   pair: string;
@@ -22,7 +22,7 @@ function cssVar(name: string, fallback: string): string {
 }
 
 export function Chart({ pair, timeframe }: ChartProps) {
-  const { matches } = useBookState(pair);
+  const { data } = useCandles(pair, timeframe);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -30,7 +30,10 @@ export function Chart({ pair, timeframe }: ChartProps) {
   const lastPairRef = useRef<string | null>(null);
   const prevCandlesRef = useRef<Candle[]>([]);
 
-  const candles = useMemo(() => bucketMatches(matches, timeframe), [matches, timeframe]);
+  const candles = useMemo(
+    () => fromServerCandles(data?.candles ?? [], timeframe),
+    [data, timeframe],
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;

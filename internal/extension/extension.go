@@ -21,7 +21,8 @@ import (
 	"github.com/flare-foundation/tee-node/pkg/processorutils"
 )
 
-// History tracks per-user deposit/withdrawal/order records for EXPORT_HISTORY.
+// History tracks per-user deposit/withdrawal/order/match records.
+// All slices are kept bounded (see caps.go); the oldest entries fall off silently.
 type History struct {
 	deposits    map[string][]types.DepositRecord    // user -> deposits
 	withdrawals map[string][]types.WithdrawalRecord // user -> withdrawals
@@ -43,70 +44,53 @@ type Extension struct {
 	mu     sync.RWMutex
 	Server *http.Server
 
-	orderbooks map[string]*orderbook.OrderBook      // pair name -> orderbook
-	balances   *balance.Manager                      // per-(user, token) balances
-	pairs      map[string]config.TradingPairConfig   // pair name -> token addresses
-	matches    []orderbook.Match                     // all matches across pairs
-	orders     map[string]string                     // orderID -> pair (for cancel routing)
-	userOrders map[string][]string                   // user address -> list of orderIDs
-	history    *History                              // deposit/withdrawal/order history per user
-	admins     map[string]bool                       // admin addresses
-	signPort   int                                   // TEE sign server port
+	orderbooks    map[string]*orderbook.OrderBook                                        // pair name -> orderbook
+	balances      *balance.Manager                                                       // per-(user, token) balances
+	pairs         map[string]config.TradingPairConfig                                    // pair name -> token addresses
+	matchesByPair map[string]*orderbook.Ring[orderbook.Match]                            // pair -> ring of recent matches
+	candles       map[string]map[orderbook.Timeframe]*orderbook.Ring[orderbook.Candle]   // pair -> tf -> ring
+	orders        map[string]string                                                      // orderID -> pair (for cancel routing)
+	userOrders    map[string][]string                                                    // user address -> list of orderIDs
+	history       *History                                                               // deposit/withdrawal/order history per user
+	admins        map[string]bool                                                        // admin addresses
+	signPort      int                                                                    // TEE sign server port
 }
 
 func New(extensionPort, signPort int) *Extension {
 	e := &Extension{
-		orderbooks: make(map[string]*orderbook.OrderBook),
-		balances:   balance.NewManager(),
-		pairs:      make(map[string]config.TradingPairConfig),
-		orders:     make(map[string]string),
-		userOrders: make(map[string][]string),
-		history:    newHistory(),
-		admins:     make(map[string]bool),
-		signPort:   signPort,
+		orderbooks:    make(map[string]*orderbook.OrderBook),
+		balances:      balance.NewManager(),
+		pairs:         make(map[string]config.TradingPairConfig),
+		matchesByPair: make(map[string]*orderbook.Ring[orderbook.Match]),
+		candles:       make(map[string]map[orderbook.Timeframe]*orderbook.Ring[orderbook.Candle]),
+		orders:        make(map[string]string),
+		userOrders:    make(map[string][]string),
+		history:       newHistory(),
+		admins:        make(map[string]bool),
+		signPort:      signPort,
 	}
 
-	// Initialize admin addresses.
 	for _, addr := range config.AdminAddresses {
 		e.admins[strings.ToLower(addr)] = true
 	}
 
-	// Initialize trading pairs from config.
 	for _, pair := range config.TradingPairs {
 		e.pairs[pair.Name] = pair
 		e.orderbooks[pair.Name] = orderbook.NewOrderBook(pair.Name)
+		e.matchesByPair[pair.Name] = orderbook.NewRing[orderbook.Match](MaxMatchesPerPair)
+		tfRings := make(map[orderbook.Timeframe]*orderbook.Ring[orderbook.Candle], len(orderbook.Timeframes))
+		for _, tf := range orderbook.Timeframes {
+			tfRings[tf] = orderbook.NewRing[orderbook.Candle](MaxCandlesPerTF)
+		}
+		e.candles[pair.Name] = tfRings
 		logger.Infof("registered trading pair: %s (base=%s, quote=%s)", pair.Name, pair.BaseToken.Hex(), pair.QuoteToken.Hex())
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /state", e.stateHandler)
 	mux.HandleFunc("POST /action", e.actionHandler)
 
 	e.Server = &http.Server{Addr: fmt.Sprintf(":%d", extensionPort), Handler: mux}
 	return e
-}
-
-// stateHandler returns public orderbook depth and recent matches.
-func (e *Extension) stateHandler(w http.ResponseWriter, r *http.Request) {
-	e.mu.RLock()
-	pairStates := make(map[string]types.PairState, len(e.orderbooks))
-	for name, ob := range e.orderbooks {
-		bids, asks := ob.Depth()
-		pairStates[name] = types.PairState{Bids: bids, Asks: asks}
-	}
-	stateResponse := types.StateResponse{
-		StateVersion: teeutils.ToHash(config.Version),
-		State: types.State{
-			Pairs:      pairStates,
-			MatchCount: len(e.matches),
-			Matches:    e.matches,
-		},
-	}
-	e.mu.RUnlock()
-
-	if err := json.NewEncoder(w).Encode(stateResponse); err != nil {
-		http.Error(w, fmt.Sprintf("sending response: %v", err), http.StatusInternalServerError)
-	}
 }
 
 // processAction routes by action type (instruction vs direct) and then by OPType/OPCommand.
@@ -166,7 +150,6 @@ func (e *Extension) processDirect(action teetypes.Action) (int, []byte) {
 		))
 	}
 
-	// Build a synthetic DataFixed for buildResult (it needs OPType/OPCommand).
 	df := &instruction.DataFixed{
 		InstructionID: action.Data.ID,
 		OPType:        di.OPType,
@@ -184,6 +167,8 @@ func (e *Extension) processDirect(action teetypes.Action) (int, []byte) {
 		ar = e.processGetMyState(action, df, di.Message)
 	case di.OPCommand == teeutils.ToHash(config.OPCommandGetBookState):
 		ar = e.processGetBookState(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandGetCandles):
+		ar = e.processGetCandles(action, df, di.Message)
 	case di.OPCommand == teeutils.ToHash(config.OPCommandExportHistory):
 		ar = e.processExportHistory(action, df, di.Message)
 	default:
@@ -197,40 +182,31 @@ func (e *Extension) processDirect(action teetypes.Action) (int, []byte) {
 }
 
 // getUserOpenOrders returns all currently-resting orders for a user.
+// Caller must hold e.mu (read or write).
 func (e *Extension) getUserOpenOrders(user string) []orderbook.Order {
-	var orders []orderbook.Order
-	orderIDs, ok := e.userOrders[user]
-	if !ok {
-		return orders
+	ids := e.userOrders[user]
+	if len(ids) == 0 {
+		return nil
 	}
-
-	for _, id := range orderIDs {
-		pair, exists := e.orders[id]
-		if !exists {
+	orders := make([]orderbook.Order, 0, len(ids))
+	for _, id := range ids {
+		pair, ok := e.orders[id]
+		if !ok {
 			continue
 		}
 		ob, ok := e.orderbooks[pair]
 		if !ok {
 			continue
 		}
-		bids, asks := ob.Depth()
-		// We need the actual order, not just depth. Search the book.
-		_ = bids
-		_ = asks
-		// For now, return a stub from history.
-	}
-
-	// Use history orders that are still open (have remaining > 0 and still in the book).
-	for _, o := range e.history.orders[user] {
-		if _, exists := e.orders[o.ID]; exists && o.Remaining > 0 {
+		if o := ob.GetOrder(id); o != nil {
 			orders = append(orders, *o)
 		}
 	}
-
 	return orders
 }
 
-// getUserMatches returns all matches involving a user.
+// getUserMatches returns the bounded ring of matches involving a user.
+// Caller must hold e.mu (read or write).
 func (e *Extension) getUserMatches(user string) []orderbook.Match {
 	return e.history.matches[user]
 }

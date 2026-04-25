@@ -113,6 +113,37 @@ func (ob *OrderBook) Depth() (bids, asks []PriceLevel) {
 	return ob.bids.Depth(), ob.asks.Depth()
 }
 
+// EvictExcessLevels trims each side down to at most maxLevelsPerSide price levels
+// by removing the worst-priced levels first. Returns all evicted orders so the
+// caller can refund holds and clean up tracking.
+func (ob *OrderBook) EvictExcessLevels(maxLevelsPerSide int) []*Order {
+	ob.mu.Lock()
+	defer ob.mu.Unlock()
+	if maxLevelsPerSide <= 0 {
+		return nil
+	}
+
+	var evicted []*Order
+	for ob.bids.LevelCount() > maxLevelsPerSide {
+		evicted = append(evicted, ob.bids.EvictWorstLevel()...)
+	}
+	for ob.asks.LevelCount() > maxLevelsPerSide {
+		evicted = append(evicted, ob.asks.EvictWorstLevel()...)
+	}
+	return evicted
+}
+
+// GetOrder returns a pointer to the resting order with the given ID, on either side.
+// Returns nil if the order is not currently resting.
+func (ob *OrderBook) GetOrder(orderID string) *Order {
+	ob.mu.RLock()
+	defer ob.mu.RUnlock()
+	if o := ob.bids.GetOrder(orderID); o != nil {
+		return o
+	}
+	return ob.asks.GetOrder(orderID)
+}
+
 // matchBuy sweeps asks for a buy order.
 // limitPrice == 0 means no price limit (market order).
 func (ob *OrderBook) matchBuy(order *Order, limitPrice uint64) []Match {
