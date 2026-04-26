@@ -3,6 +3,7 @@ package extension
 import (
 	"encoding/json"
 	"fmt"
+	"math/bits"
 	"strings"
 	"time"
 
@@ -18,11 +19,13 @@ import (
 )
 
 // pricePrecision is the multiplier applied to human-readable prices before they
-// are stored in the TEE. This allows 3 decimal places of price precision (0.001)
-// even when base and quote tokens have equal decimals, by dividing price*quantity
+// are stored in the TEE. This allows 6 decimal places of price precision
+// (0.000001) — enough headroom for sub-cent assets (e.g. FLR ~$0.008) to have
+// a meaningful spread, since 1 raw tick = $0.000001. price*quantity is divided
 // back by this factor wherever a quote-token amount is computed.
-// The frontend must multiply user-entered prices by this same constant.
-const pricePrecision = 1000
+// The frontend (frontend/src/lib/price.ts PRICE_PRECISION) and stress test
+// (tools/pkg/stress/scaling.go PricePrecision) must use this same constant.
+const pricePrecision = 1_000_000
 
 // appendBounded appends v to s and trims the head so len(s) <= maxLen.
 func appendBounded[T any](s []T, v T, maxLen int) []T {
@@ -33,7 +36,46 @@ func appendBounded[T any](s []T, v T, maxLen int) []T {
 	return s
 }
 
+// safeMulDiv returns (a*b)/c. Returns ok=false if a*b overflows uint64.
+// Callers should treat ok=false as a hard failure; the operands cannot be
+// processed without losing precision or wrapping.
+func safeMulDiv(a, b, c uint64) (uint64, bool) {
+	hi, lo := bits.Mul64(a, b)
+	if hi != 0 {
+		return 0, false
+	}
+	if c == 0 {
+		return 0, false
+	}
+	return lo / c, true
+}
+
+// mulPrice computes (quantity * price) / pricePrecision with overflow
+// detection. Panics on overflow because every caller is downstream of
+// calculateHold, which vets quantity*price at order-placement time via
+// safeMulDiv. Reaching mulPrice with overflowing operands therefore indicates
+// an invariant violation (a resting order whose Q*P now wraps uint64), which
+// is far worse to silently absorb than to crash on. The previous behavior was
+// to use plain `*` which silently wrapped and produced wrong quote amounts.
+func mulPrice(quantity, price uint64) uint64 {
+	r, ok := safeMulDiv(quantity, price, pricePrecision)
+	if !ok {
+		panic(fmt.Sprintf("price math overflow: quantity=%d * price=%d / %d wraps uint64 (calculateHold should have rejected at placement)",
+			quantity, price, pricePrecision))
+	}
+	return r
+}
+
 // processPlaceOrder handles PLACE_ORDER direct instructions.
+//
+// Lock policy: the entire critical section — per-user cap check, hold,
+// orderbook insert, match processing, residual release, tracking, and
+// eviction — runs under e.mu.Lock. This makes place + register + evict
+// atomic w.r.t. concurrent place_order/cancel/eviction (see C2).
+//
+// Lock order: e.mu  →  ob.mu (inside ob.* calls)  →  balances.mu (inside e.balances.*).
+// Nothing in pkg/orderbook or pkg/balance ever calls back into Extension,
+// so this ordering cannot deadlock.
 func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.DataFixed, msg hexutil.Bytes) teetypes.ActionResult {
 	var req types.PlaceOrderRequest
 	if err := json.Unmarshal(msg, &req); err != nil {
@@ -54,14 +96,6 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
 		return buildResult(action, df, nil, 0, fmt.Errorf("orderbook not found for pair: %s", req.Pair))
 	}
 
-	// Per-user open-order cap. Reject before holding funds.
-	e.mu.RLock()
-	openCount := len(e.userOrders[user])
-	e.mu.RUnlock()
-	if openCount >= MaxOrdersPerUser {
-		return buildResult(action, df, nil, 0, fmt.Errorf("too many open orders (max %d)", MaxOrdersPerUser))
-	}
-
 	order := &orderbook.Order{
 		ID:        e.nextOrderID(),
 		Owner:     user,
@@ -76,6 +110,14 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
 	holdToken, holdAmount, err := e.calculateHold(user, pairConfig, order)
 	if err != nil {
 		return buildResult(action, df, nil, 0, fmt.Errorf("calculating hold: %w", err))
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Per-user open-order cap. Reject before holding funds.
+	if len(e.userOrders[user]) >= MaxOrdersPerUser {
+		return buildResult(action, df, nil, 0, fmt.Errorf("too many open orders (max %d)", MaxOrdersPerUser))
 	}
 
 	if err := e.balances.Hold(user, holdToken, holdAmount); err != nil {
@@ -98,8 +140,6 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
 		return buildResult(action, df, nil, 0, fmt.Errorf("placing order: %w", err))
 	}
 
-	// Process matches: transfer funds, ring-buffer the trades, update candles, clean up filled orders.
-	e.mu.Lock()
 	for _, m := range matches {
 		e.processMatch(m, pairConfig)
 	}
@@ -112,25 +152,40 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
 		}
 	}
 
+	// For limit buys, the hold was sized at the limit price but transfers happen
+	// at resting prices (≤ limit). Release the difference back to the buyer so it
+	// doesn't get stuck in Held forever. Also covers division-precision dust
+	// (Σ floor(q_i*p_i/N) ≤ floor(Q*P/N)).
+	if req.Type == orderbook.Limit && order.Side == orderbook.Buy && len(matches) > 0 {
+		var totalTransferred uint64
+		for _, m := range matches {
+			totalTransferred += mulPrice(m.Quantity, m.Price)
+		}
+		filledQty := order.Quantity - order.Remaining
+		holdedForFilled := mulPrice(filledQty, order.Price)
+		if holdedForFilled > totalTransferred {
+			_ = e.balances.Release(user, holdToken, holdedForFilled-totalTransferred)
+		}
+	}
+
+	status := "resting"
+	if order.Remaining == 0 {
+		status = "filled"
+	} else if len(matches) > 0 {
+		status = "partial"
+	}
+	respRemaining := order.Remaining
+
 	// Track the order if it's resting.
 	if order.Remaining > 0 {
 		e.orders[order.ID] = req.Pair
 		e.userOrders[user] = append(e.userOrders[user], order.ID)
 	}
-	e.history.orders[user] = appendBounded(e.history.orders[user], order, MaxUserHistoryOrders)
-	e.mu.Unlock()
+	e.history.orders[user] = appendBounded(e.history.orders[user], *order, MaxUserHistoryOrders)
 
-	// Snapshot status + remaining before eviction can mutate them.
-	preEvictRemaining := order.Remaining
-	status := "resting"
-	if preEvictRemaining == 0 {
-		status = "filled"
-	} else if len(matches) > 0 {
-		status = "partial"
-	}
-
-	// Enforce per-side level cap. Eviction takes ob.mu, then we refund + clean up under e.mu.
-	if preEvictRemaining > 0 {
+	// Enforce per-side level cap. Held under e.mu so the evicted refund + tracking
+	// cleanup is atomic w.r.t. any concurrent place/cancel.
+	if order.Remaining > 0 {
 		if evicted := ob.EvictExcessLevels(MaxLevelsPerSide); len(evicted) > 0 {
 			e.handleEvictions(req.Pair, pairConfig, evicted)
 		}
@@ -140,12 +195,12 @@ func (e *Extension) processPlaceOrder(action teetypes.Action, df *instruction.Da
 		OrderID:   order.ID,
 		Status:    status,
 		Matches:   matches,
-		Remaining: preEvictRemaining,
+		Remaining: respRemaining,
 	}
 	data, _ := json.Marshal(resp)
 
 	logger.Infof("order placed: %s %s %s %s price=%d qty=%d matches=%d remaining=%d",
-		order.ID, req.Pair, req.Side, req.Type, req.Price, req.Quantity, len(matches), order.Remaining)
+		order.ID, req.Pair, req.Side, req.Type, req.Price, req.Quantity, len(matches), respRemaining)
 
 	return buildResult(action, df, data, 1, nil)
 }
@@ -212,7 +267,7 @@ func (e *Extension) processMatch(m orderbook.Match, pairConfig config.TradingPai
 	buyOwner := m.BuyOwner
 	sellOwner := m.SellOwner
 
-	quoteAmount := m.Quantity * m.Price / pricePrecision
+	quoteAmount := mulPrice(m.Quantity, m.Price)
 	_ = e.balances.Transfer(buyOwner, sellOwner, pairConfig.QuoteToken, quoteAmount)
 	_ = e.balances.Transfer(sellOwner, buyOwner, pairConfig.BaseToken, m.Quantity)
 
@@ -300,9 +355,9 @@ func (e *Extension) cleanupIfFilled(orderID, owner, pair string) {
 }
 
 // handleEvictions refunds held funds for evicted orders and clears them from tracking.
+// Caller must hold e.mu.Lock(). The previous "ev.Remaining = 0" mutation was
+// removed when history switched to value-typed Orders (see History docstring).
 func (e *Extension) handleEvictions(pair string, pairConfig config.TradingPairConfig, evicted []*orderbook.Order) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	for _, ev := range evicted {
 		owner := strings.ToLower(ev.Owner)
 		token, amt := e.calculateRelease(pairConfig, ev)
@@ -311,7 +366,6 @@ func (e *Extension) handleEvictions(pair string, pairConfig config.TradingPairCo
 		}
 		delete(e.orders, ev.ID)
 		e.removeUserOrder(owner, ev.ID)
-		ev.Remaining = 0 // shared pointer with history.orders entry
 		logger.Infof("evicted order %s pair=%s side=%s price=%d (cap=%d)",
 			ev.ID, pair, ev.Side, ev.Price, MaxLevelsPerSide)
 	}
@@ -340,7 +394,11 @@ func (e *Extension) calculateHold(user string, pair config.TradingPairConfig, or
 				return holdToken, 0, fmt.Errorf("no available %s balance for market buy", holdToken.Hex())
 			}
 		} else {
-			holdAmount = order.Quantity * order.Price / pricePrecision
+			var ok bool
+			holdAmount, ok = safeMulDiv(order.Quantity, order.Price, pricePrecision)
+			if !ok {
+				return holdToken, 0, fmt.Errorf("overflow: quantity * price exceeds uint64")
+			}
 		}
 	case orderbook.Sell:
 		holdToken = pair.BaseToken
@@ -362,7 +420,7 @@ func (e *Extension) calculateHold(user string, pair config.TradingPairConfig, or
 func (e *Extension) calculateRelease(pair config.TradingPairConfig, order *orderbook.Order) (common.Address, uint64) {
 	switch order.Side {
 	case orderbook.Buy:
-		return pair.QuoteToken, order.Remaining * order.Price / pricePrecision
+		return pair.QuoteToken, mulPrice(order.Remaining, order.Price)
 	case orderbook.Sell:
 		return pair.BaseToken, order.Remaining
 	default:
@@ -375,7 +433,7 @@ func totalFilled(matches []orderbook.Match, order *orderbook.Order) uint64 {
 	var total uint64
 	for _, m := range matches {
 		if order.Side == orderbook.Buy {
-			total += m.Quantity * m.Price / pricePrecision
+			total += mulPrice(m.Quantity, m.Price)
 		} else {
 			total += m.Quantity
 		}

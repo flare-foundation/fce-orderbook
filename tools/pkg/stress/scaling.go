@@ -2,8 +2,11 @@ package stress
 
 import "math/big"
 
-// PricePrecision must match pricePrecision in internal/extension/handlers.go.
-const PricePrecision uint64 = 1000
+// PricePrecision must match pricePrecision in internal/extension/handlers.go
+// and PRICE_PRECISION in frontend/src/lib/price.ts. 6 decimal places of
+// price precision (1 raw tick = 0.000001 quote-per-base) so sub-cent assets
+// like FLR can have a meaningful book.
+const PricePrecision uint64 = 1_000_000
 
 // Scaling converts human-readable order parameters (tokens, quote-per-base
 // price) into the raw integer units the TEE extension expects. Matches the

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -61,7 +62,6 @@ func TestC1_AppendBoundedBackingArrayBound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestC4_PlaceOrderRejectsOverflow(t *testing.T) {
-	t.Skip("C4 confirmed — fix pending: bits.Mul64 overflow check on q*p")
 	base := common.HexToAddress(testBaseHex)
 	quote := common.HexToAddress(testQuoteHex)
 	e := newTestExtension(testPair, base, quote)
@@ -79,7 +79,7 @@ func TestC4_PlaceOrderRejectsOverflow(t *testing.T) {
 	if wrappedProduct == 0 {
 		t.Fatalf("test setup: product wrapped to zero, pick different operands")
 	}
-	wrappedHold := wrappedProduct / 1000
+	wrappedHold := wrappedProduct / pricePrecision
 
 	body, _ := json.Marshal(types.PlaceOrderRequest{
 		Sender: user, Pair: testPair, Side: orderbook.Buy, Type: orderbook.Limit,
@@ -90,8 +90,8 @@ func TestC4_PlaceOrderRejectsOverflow(t *testing.T) {
 	// CORRECT behavior: reject with overflow error before holding anything.
 	if ar.Status == 1 {
 		held := e.balances.Get(user, quote).Held
-		t.Errorf("CONFIRMED C4: order accepted with overflowing q*p; held=%d (vs wrapped %d, vs true %s)",
-			held, wrappedHold, "(2^33+1)/1000 ≈ 8.6M which is meaningless for q*p ≈ 1.85e19")
+		t.Errorf("CONFIRMED C4: order accepted with overflowing q*p; held=%d (vs wrapped %d, vs true q*p ≈ 1.85e19 which is meaningless)",
+			held, wrappedHold)
 		return
 	}
 	if !strings.Contains(strings.ToLower(ar.Log), "overflow") {
@@ -104,10 +104,14 @@ func TestC4_PlaceOrderRejectsOverflow(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestC5_RestartPreservesDepositedBalance(t *testing.T) {
-	t.Skip("C5 confirmed — fix pending: balance persistence across restart")
 	base := common.HexToAddress(testBaseHex)
 	quote := common.HexToAddress(testQuoteHex)
+	persistPath := filepath.Join(t.TempDir(), "balances.json")
+
 	e1 := newTestExtension(testPair, base, quote)
+	if err := e1.balances.SetPersistPath(persistPath); err != nil {
+		t.Fatalf("SetPersistPath e1: %v", err)
+	}
 
 	user := mkAddr(0)
 	if err := e1.balances.Deposit(user, quote, 1000); err != nil {
@@ -117,13 +121,47 @@ func TestC5_RestartPreservesDepositedBalance(t *testing.T) {
 		t.Fatalf("pre-restart balance: got %d, want 1000", got)
 	}
 
-	// Simulate a process restart by constructing a fresh Extension.
+	// Simulate a process restart by constructing a fresh Extension that loads
+	// the persisted snapshot.
 	e2 := newTestExtension(testPair, base, quote)
+	if err := e2.balances.SetPersistPath(persistPath); err != nil {
+		t.Fatalf("SetPersistPath e2: %v", err)
+	}
 
-	// CORRECT behavior: post-restart balance reflects the on-chain deposit.
 	got := e2.balances.Get(user, quote).Available
 	if got != 1000 {
-		t.Errorf("CONFIRMED C5: post-restart Available=%d, want 1000 (on-chain deposit lost)", got)
+		t.Errorf("post-restart Available=%d, want 1000 (deposit not persisted)", got)
+	}
+}
+
+// TestC5_RestartReleasesHeldOnLoad verifies the load-time migration: any Held
+// balance is moved back to Available, since the orders that held the funds
+// are gone after a restart.
+func TestC5_RestartReleasesHeldOnLoad(t *testing.T) {
+	base := common.HexToAddress(testBaseHex)
+	quote := common.HexToAddress(testQuoteHex)
+	persistPath := filepath.Join(t.TempDir(), "balances.json")
+
+	e1 := newTestExtension(testPair, base, quote)
+	if err := e1.balances.SetPersistPath(persistPath); err != nil {
+		t.Fatal(err)
+	}
+
+	user := mkAddr(0)
+	_ = e1.balances.Deposit(user, quote, 1000)
+	_ = e1.balances.Hold(user, quote, 400)
+	bal := e1.balances.Get(user, quote)
+	if bal.Available != 600 || bal.Held != 400 {
+		t.Fatalf("pre-restart: got Available=%d Held=%d, want 600/400", bal.Available, bal.Held)
+	}
+
+	e2 := newTestExtension(testPair, base, quote)
+	if err := e2.balances.SetPersistPath(persistPath); err != nil {
+		t.Fatal(err)
+	}
+	bal = e2.balances.Get(user, quote)
+	if bal.Available != 1000 || bal.Held != 0 {
+		t.Errorf("post-restart: got Available=%d Held=%d, want 1000/0 (Held migrated to Available)", bal.Available, bal.Held)
 	}
 }
 
@@ -132,7 +170,6 @@ func TestC5_RestartPreservesDepositedBalance(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestC8_BuyAtImprovedPriceFullyReleasesHeld(t *testing.T) {
-	t.Skip("C8 confirmed — fix pending: release price-improvement residual to buyer")
 	base := common.HexToAddress(testBaseHex)
 	quote := common.HexToAddress(testQuoteHex)
 	e := newTestExtension(testPair, base, quote)
@@ -146,15 +183,15 @@ func TestC8_BuyAtImprovedPriceFullyReleasesHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Seller asks at 95_000 (~$95.000).
+	// Seller asks at 95_000_000 (~$95 at pricePrecision=1_000_000).
 	placeOrder(t, e, types.PlaceOrderRequest{
 		Sender: seller, Pair: testPair, Side: orderbook.Sell, Type: orderbook.Limit,
-		Price: 95_000, Quantity: 1000,
+		Price: 95_000_000, Quantity: 1000,
 	})
-	// Buyer bids at 110_000 — improvement of 15_000 per unit.
+	// Buyer bids at 110_000_000 — improvement of 15_000_000 raw per unit (~$15).
 	resp := placeOrder(t, e, types.PlaceOrderRequest{
 		Sender: buyer, Pair: testPair, Side: orderbook.Buy, Type: orderbook.Limit,
-		Price: 110_000, Quantity: 1000,
+		Price: 110_000_000, Quantity: 1000,
 	})
 	if resp.Status != "filled" {
 		t.Fatalf("status: got %s, want filled", resp.Status)
@@ -171,23 +208,57 @@ func TestC8_BuyAtImprovedPriceFullyReleasesHeld(t *testing.T) {
 // H1 — user-keyed balance map is unbounded across distinct users
 // ---------------------------------------------------------------------------
 
-func TestH1_BalanceManagerEvictsInactiveUsers(t *testing.T) {
-	t.Skip("H1 confirmed — fix pending: evict zero-balance/zero-held users")
+func TestH1_BalanceManagerEvictsEmptyUsers(t *testing.T) {
 	bm := balance.NewManager()
 	addr := common.HexToAddress(testBaseHex)
 
 	const N = 5000
 	for i := 0; i < N; i++ {
-		if err := bm.Deposit(mkAddr(i), addr, 1); err != nil {
+		u := mkAddr(i)
+		if err := bm.Deposit(u, addr, 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := bm.Withdraw(u, addr, 1); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if got := bm.UserCount(); got != N {
+		t.Fatalf("pre-evict count: got %d, want %d", got, N)
+	}
 
-	// CORRECT behavior (some bound on stale users): the very first user, who has
-	// done nothing recent, would have been evicted under any LRU policy.
-	first := mkAddr(0)
-	bal := bm.Get(first, addr)
-	if bal.Available != 0 {
-		t.Errorf("CONFIRMED H1: %d distinct users tracked with no eviction; first user retains Available=%d", N, bal.Available)
+	removed := bm.EvictEmpty()
+	if removed != N {
+		t.Errorf("EvictEmpty returned %d, want %d", removed, N)
+	}
+	if got := bm.UserCount(); got != 0 {
+		t.Errorf("post-evict count: got %d, want 0", got)
+	}
+}
+
+// TestH1_EvictEmptyKeepsActiveUsers verifies that users with non-zero balances
+// or non-zero held amounts are NOT evicted.
+func TestH1_EvictEmptyKeepsActiveUsers(t *testing.T) {
+	bm := balance.NewManager()
+	addr := common.HexToAddress(testBaseHex)
+
+	// User A has Available, user B has Held only, user C is fully empty.
+	a := mkAddr(0)
+	b := mkAddr(1)
+	c := mkAddr(2)
+	_ = bm.Deposit(a, addr, 100)
+	_ = bm.Deposit(b, addr, 100)
+	_ = bm.Hold(b, addr, 100) // moves to Held, leaves Available=0
+	_ = bm.Deposit(c, addr, 1)
+	_ = bm.Withdraw(c, addr, 1)
+
+	if got := bm.UserCount(); got != 3 {
+		t.Fatalf("pre-evict: got %d, want 3", got)
+	}
+	removed := bm.EvictEmpty()
+	if removed != 1 {
+		t.Errorf("EvictEmpty: got %d removed, want 1", removed)
+	}
+	if got := bm.UserCount(); got != 2 {
+		t.Errorf("post-evict: got %d, want 2 (A and B retained)", got)
 	}
 }

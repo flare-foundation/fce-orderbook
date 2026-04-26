@@ -34,6 +34,7 @@ var (
 	SignPort        = 9090
 	TypesServerPort = 8100
 	AdminAddresses  []string
+	BalancesPath    string // optional: path to persist balance manager state
 )
 
 // TradingPairConfig maps a pair name to its base and quote token addresses.
@@ -72,6 +73,9 @@ func init() {
 		if n, err := strconv.Atoi(v); err == nil {
 			TypesServerPort = n
 		}
+	}
+	if v := os.Getenv("BALANCES_PATH"); v != "" {
+		BalancesPath = v
 	}
 	if v := os.Getenv("ADMIN_ADDRESSES"); v != "" {
 		for _, addr := range strings.Split(v, ",") {

@@ -23,7 +23,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestC3_NextOrderIDConcurrentUniqueness(t *testing.T) {
-	t.Skip("C3 confirmed — fix pending: atomic.Uint64 for orderCounter")
 	base := common.HexToAddress(testBaseHex)
 	quote := common.HexToAddress(testQuoteHex)
 	e := newTestExtension(testPair, base, quote)
@@ -67,7 +66,6 @@ func TestC3_NextOrderIDConcurrentUniqueness(t *testing.T) {
 // Eviction writes ev.Remaining=0 on a *Order pointer that's also in history.orders.
 // If the marshal happens to dereference the same pointer concurrently, -race fires.
 func TestC7_HistoryVsEvictionDataRace(t *testing.T) {
-	t.Skip("C7 confirmed — fix pending: store Order by value in history; remove ev.Remaining=0 mutation")
 	base := common.HexToAddress(testBaseHex)
 	quote := common.HexToAddress(testQuoteHex)
 	e := newTestExtension(testPair, base, quote)
@@ -164,7 +162,6 @@ func placeQuiet(e *Extension, req types.PlaceOrderRequest) error {
 // Spam concurrent PLACE_ORDERs that trigger eviction. After things settle, every
 // e.orders[id] entry MUST correspond to an order still on the book.
 func TestC2_PlaceVsEvictTrackingConsistency(t *testing.T) {
-	t.Skip("C2 confirmed — fix pending: hold e.mu across place+register+evict")
 	base := common.HexToAddress(testBaseHex)
 	quote := common.HexToAddress(testQuoteHex)
 	e := newTestExtension(testPair, base, quote)
