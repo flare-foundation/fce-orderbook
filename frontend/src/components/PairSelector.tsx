@@ -25,8 +25,8 @@ function displayName(base: string, quote: string): string {
 function fmtPrice(n: number): string {
   if (!n) return '—';
   if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (n >= 1) return n.toFixed(3);
-  return n.toFixed(4);
+  if (n >= 1) return n.toFixed(4);
+  return n.toFixed(6);
 }
 
 function fmtChange(pct: number): string {

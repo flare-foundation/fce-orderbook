@@ -27,10 +27,11 @@ func (e *Extension) processGetMyState(action teetypes.Action, df *instruction.Da
 	}
 
 	e.mu.RLock()
+	srcMatches := e.getUserMatches(user)
 	resp := types.GetMyStateResponse{
 		Balances:   e.balances.GetAll(user),
 		OpenOrders: e.getUserOpenOrders(user),
-		Matches:    e.getUserMatches(user),
+		Matches:    append([]orderbook.Match(nil), srcMatches...), // defensive copy
 	}
 	e.mu.RUnlock()
 
@@ -60,19 +61,23 @@ func (e *Extension) processExportHistory(action teetypes.Action, df *instruction
 	}
 
 	e.mu.RLock()
-	// Collect all orders for the target user.
-	var allOrders []orderbook.Order
-	for _, o := range e.history.orders[targetUser] {
-		allOrders = append(allOrders, *o)
-	}
+	// Defensive copies — marshal happens after RUnlock.
+	srcOrders := e.history.orders[targetUser]
+	allOrders := append([]orderbook.Order(nil), srcOrders...)
+	srcMatches := e.history.matches[targetUser]
+	allMatches := append([]orderbook.Match(nil), srcMatches...)
+	srcDeposits := e.history.deposits[targetUser]
+	allDeposits := append([]types.DepositRecord(nil), srcDeposits...)
+	srcWithdrawals := e.history.withdrawals[targetUser]
+	allWithdrawals := append([]types.WithdrawalRecord(nil), srcWithdrawals...)
 
 	resp := types.ExportHistoryResponse{
 		User:        targetUser,
 		Balances:    e.balances.GetAll(targetUser),
 		Orders:      allOrders,
-		Matches:     e.history.matches[targetUser],
-		Deposits:    e.history.deposits[targetUser],
-		Withdrawals: e.history.withdrawals[targetUser],
+		Matches:     allMatches,
+		Deposits:    allDeposits,
+		Withdrawals: allWithdrawals,
 	}
 	e.mu.RUnlock()
 

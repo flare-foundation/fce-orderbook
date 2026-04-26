@@ -10,7 +10,6 @@ import (
 // answers has both message and result decoders. Catches drift when a new command
 // is added to internal/config/config.go but forgotten here.
 func TestRegisterDecoders_AllOPCommandsCovered(t *testing.T) {
-	t.Skip("C6 confirmed — fix pending: register GET_CANDLES decoders")
 	r := decoder.NewRegistry()
 	RegisterDecoders(r)
 

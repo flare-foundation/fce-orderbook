@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"extension-scaffold/internal/config"
@@ -23,10 +24,16 @@ import (
 
 // History tracks per-user deposit/withdrawal/order/match records.
 // All slices are kept bounded (see caps.go); the oldest entries fall off silently.
+//
+// Note: orders are stored BY VALUE, not by pointer. They are a snapshot at
+// place time. This avoids races between the matching engine (which mutates
+// the live *Order on each fill) and the eviction path (which used to mutate
+// Remaining=0). EXPORT_HISTORY thus reports the order as placed; for the
+// up-to-date book state of an open order, use GET_MY_STATE.
 type History struct {
 	deposits    map[string][]types.DepositRecord    // user -> deposits
 	withdrawals map[string][]types.WithdrawalRecord // user -> withdrawals
-	orders      map[string][]*orderbook.Order       // user -> all orders (including filled/cancelled)
+	orders      map[string][]orderbook.Order        // user -> all orders (snapshot at place time)
 	matches     map[string][]orderbook.Match        // user -> matches
 }
 
@@ -34,7 +41,7 @@ func newHistory() *History {
 	return &History{
 		deposits:    make(map[string][]types.DepositRecord),
 		withdrawals: make(map[string][]types.WithdrawalRecord),
-		orders:      make(map[string][]*orderbook.Order),
+		orders:      make(map[string][]orderbook.Order),
 		matches:     make(map[string][]orderbook.Match),
 	}
 }
@@ -74,6 +81,14 @@ func New(extensionPort, signPort int) *Extension {
 		e.admins[strings.ToLower(addr)] = true
 	}
 
+	if config.BalancesPath != "" {
+		if err := e.balances.SetPersistPath(config.BalancesPath); err != nil {
+			logger.Errorf("balance persistence load failed at %s: %v (starting empty)", config.BalancesPath, err)
+		} else {
+			logger.Infof("balance persistence enabled at %s", config.BalancesPath)
+		}
+	}
+
 	for _, pair := range config.TradingPairs {
 		e.pairs[pair.Name] = pair
 		e.orderbooks[pair.Name] = orderbook.NewOrderBook(pair.Name)
@@ -90,7 +105,25 @@ func New(extensionPort, signPort int) *Extension {
 	mux.HandleFunc("POST /action", e.actionHandler)
 
 	e.Server = &http.Server{Addr: fmt.Sprintf(":%d", extensionPort), Handler: mux}
+
+	// Periodically sweep zero-balance users so the manager's user-keyed map
+	// doesn't grow unboundedly under churn (mock MMs spin up new addresses).
+	go e.sweepEmptyBalances(5 * time.Minute)
+
 	return e
+}
+
+// sweepEmptyBalances runs forever, calling balances.EvictEmpty at the given interval.
+// This goroutine is intentionally fire-and-forget; the process exits when the
+// container stops.
+func (e *Extension) sweepEmptyBalances(interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for range t.C {
+		if n := e.balances.EvictEmpty(); n > 0 {
+			logger.Infof("balance manager: evicted %d empty user records", n)
+		}
+	}
 }
 
 // processAction routes by action type (instruction vs direct) and then by OPType/OPCommand.
@@ -211,10 +244,11 @@ func (e *Extension) getUserMatches(user string) []orderbook.Match {
 	return e.history.matches[user]
 }
 
-// nextOrderID generates a unique order ID.
-var orderCounter uint64
+// nextOrderID generates a unique order ID. Concurrent-safe: the counter is
+// incremented atomically and combined with a nanosecond timestamp.
+var orderCounter atomic.Uint64
 
 func (e *Extension) nextOrderID() string {
-	orderCounter++
-	return fmt.Sprintf("ORD-%d-%d", time.Now().UnixNano(), orderCounter)
+	n := orderCounter.Add(1)
+	return fmt.Sprintf("ORD-%d-%d", time.Now().UnixNano(), n)
 }

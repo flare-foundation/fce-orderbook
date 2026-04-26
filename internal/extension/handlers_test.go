@@ -178,13 +178,13 @@ func TestPlaceOrder_LevelEvictionRefundsAndUpdatesTracking(t *testing.T) {
 		}
 	}
 
-	// The evicted order's history entry has Remaining=0.
+	// The evicted order's history entry exists; per C7, history snapshots at place time.
 	hist := e.history.orders[worstUser]
 	if len(hist) != 1 {
 		t.Fatalf("history: got %d entries, want 1", len(hist))
 	}
-	if hist[0].Remaining != 0 {
-		t.Fatalf("history Remaining: got %d, want 0 (system-cancelled)", hist[0].Remaining)
+	if hist[0].ID == "" || hist[0].Owner != worstUser {
+		t.Fatalf("history entry malformed: %+v", hist[0])
 	}
 
 	// Surviving users still have their funds held.
@@ -212,11 +212,14 @@ func TestProcessMatch_PerPairRingAndCandles(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Price units are scaled by pricePrecision (1_000_000), so 100_000 = $0.1.
+	// Quote hold = 10 * 100_000 / 1_000_000 = 1 unit, well above ErrZeroAmount.
+	const matchPrice uint64 = 100_000
 	placeOrder(t, e, types.PlaceOrderRequest{
-		Sender: seller, Pair: pair, Side: orderbook.Sell, Type: orderbook.Limit, Price: 100, Quantity: 10,
+		Sender: seller, Pair: pair, Side: orderbook.Sell, Type: orderbook.Limit, Price: matchPrice, Quantity: 10,
 	})
 	resp := placeOrder(t, e, types.PlaceOrderRequest{
-		Sender: buyer, Pair: pair, Side: orderbook.Buy, Type: orderbook.Limit, Price: 100, Quantity: 10,
+		Sender: buyer, Pair: pair, Side: orderbook.Buy, Type: orderbook.Limit, Price: matchPrice, Quantity: 10,
 	})
 
 	if resp.Status != "filled" {
@@ -248,8 +251,8 @@ func TestProcessMatch_PerPairRingAndCandles(t *testing.T) {
 			t.Errorf("%v candle missing", tf)
 			continue
 		}
-		if c.Open != 100 || c.Close != 100 || c.Volume != 10 || c.Trades != 1 {
-			t.Errorf("%v candle OHLCV: got %+v, want O=C=100 V=10 T=1", tf, c)
+		if c.Open != matchPrice || c.Close != matchPrice || c.Volume != 10 || c.Trades != 1 {
+			t.Errorf("%v candle OHLCV: got %+v, want O=C=%d V=10 T=1", tf, c, matchPrice)
 		}
 	}
 

@@ -3,7 +3,7 @@ import { useAccount } from 'wagmi';
 import { useMyState } from '../hooks/useMyState';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { PAIRS } from '../config/generated';
-import { formatPrice } from '../lib/price';
+import { formatPriceAdaptive } from '../lib/price';
 
 interface MyFillsProps {
   pair: string;
@@ -75,7 +75,7 @@ export function MyFills({ pair }: MyFillsProps) {
             <tr key={`${m.timestamp}-${m.buyOrderId}-${m.sellOrderId}-${i}`}>
               <td className="num" style={{ color: 'var(--fg-mute)' }}>{fmtTime(m.timestamp)}</td>
               <td className={side === 'buy' ? 'bid' : 'ask'}>{side.toUpperCase()}</td>
-              <td className="num">{formatPrice(m.price).toFixed(3)}</td>
+              <td className="num">{formatPriceAdaptive(m.price)}</td>
               <td className="num">{fmtQty(m.quantity)}</td>
             </tr>
           );

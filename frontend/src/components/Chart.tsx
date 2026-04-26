@@ -9,6 +9,7 @@ import {
 } from 'lightweight-charts';
 import { useCandles } from '../hooks/useCandles';
 import { fromServerCandles, type Candle, type Timeframe, TF_SECONDS } from '../lib/candles';
+import { formatHumanAdaptive } from '../lib/price';
 
 interface ChartProps {
   pair: string;
@@ -71,7 +72,7 @@ export function Chart({ pair, timeframe }: ChartProps) {
         vertLine: { color: fgMute, width: 1, style: 2, labelBackgroundColor: accent },
         horzLine: { color: fgMute, width: 1, style: 2, labelBackgroundColor: accent },
       },
-      localization: { priceFormatter: (p: number) => p.toFixed(3) },
+      localization: { priceFormatter: formatHumanAdaptive },
     });
 
     const series = chart.addSeries(CandlestickSeries, {
@@ -80,7 +81,7 @@ export function Chart({ pair, timeframe }: ChartProps) {
       wickUpColor: bid,
       wickDownColor: ask,
       borderVisible: false,
-      priceFormat: { type: 'price', precision: 3, minMove: 0.001 },
+      priceFormat: { type: 'price', precision: 6, minMove: 0.000001 },
     });
 
     chartRef.current = chart;

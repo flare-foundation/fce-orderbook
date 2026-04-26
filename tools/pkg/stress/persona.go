@@ -1,6 +1,7 @@
 package stress
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 )
@@ -12,7 +13,7 @@ type Action struct {
 	Pair     string
 	Side     string // "buy" | "sell"
 	Type     string // "limit" | "market"
-	Price    uint64 // on-wire (pre-multiplied by pricePrecision=1000)
+	Price    uint64 // on-wire (pre-multiplied by PricePrecision; see scaling.go)
 	Quantity uint64
 }
 
@@ -106,9 +107,16 @@ func resolveMidSpread(oracle PriceOracle, staticMid, staticSpread, spreadBps uin
 	mid = staticMid
 	spread = staticSpread
 	if oracle != nil {
-		if live := oracle.Mid(); live > 0 {
-			mid = live
+		live := oracle.Mid()
+		if live == 0 {
+			// An oracle was wired in but it reports no price. Falling back to
+			// staticMid would silently quote against an arbitrary number
+			// (e.g. 100 from the `day` tier). Bail loudly instead — this is a
+			// real outage, not a transient blip the runtime poll-loop already
+			// papers over by holding the last good mid.
+			panic(fmt.Sprintf("oracle %s reports mid=0; refusing to fall back to staticMid=%d", oracle.Symbol(), staticMid))
 		}
+		mid = live
 		if spreadBps > 0 {
 			spread = mid * spreadBps / 10000
 			if spread == 0 {

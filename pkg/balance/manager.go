@@ -20,9 +20,14 @@ type TokenBalance struct {
 }
 
 // Manager tracks per-(user, token) balances.
+//
+// If persistPath is set (via SetPersistPath), every successful state
+// mutation atomically writes the full snapshot to disk so a restart can
+// reload the live balance state.
 type Manager struct {
-	mu       sync.RWMutex
-	balances map[string]map[common.Address]*TokenBalance // user address -> token address -> balance
+	mu          sync.RWMutex
+	balances    map[string]map[common.Address]*TokenBalance // user address -> token address -> balance
+	persistPath string                                      // "" disables persistence
 }
 
 // NewManager creates an empty balance manager.
@@ -43,6 +48,7 @@ func (m *Manager) Deposit(user string, token common.Address, amount uint64) erro
 
 	tb := m.getOrCreate(user, token)
 	tb.Available += amount
+	_ = m.save()
 	return nil
 }
 
@@ -60,6 +66,7 @@ func (m *Manager) Withdraw(user string, token common.Address, amount uint64) err
 		return ErrInsufficientBalance
 	}
 	tb.Available -= amount
+	_ = m.save()
 	return nil
 }
 
@@ -78,6 +85,7 @@ func (m *Manager) Hold(user string, token common.Address, amount uint64) error {
 	}
 	tb.Available -= amount
 	tb.Held += amount
+	_ = m.save()
 	return nil
 }
 
@@ -96,6 +104,7 @@ func (m *Manager) Release(user string, token common.Address, amount uint64) erro
 	}
 	tb.Held -= amount
 	tb.Available += amount
+	_ = m.save()
 	return nil
 }
 
@@ -118,6 +127,7 @@ func (m *Manager) Transfer(from, to string, token common.Address, amount uint64)
 
 	toBal := m.getOrCreate(to, token)
 	toBal.Available += amount
+	_ = m.save()
 	return nil
 }
 
@@ -152,6 +162,42 @@ func (m *Manager) GetAll(user string) map[common.Address]TokenBalance {
 		result[addr] = *tb
 	}
 	return result
+}
+
+// UserCount returns the number of distinct user addresses with any tracked balance.
+func (m *Manager) UserCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.balances)
+}
+
+// EvictEmpty removes any user whose every token balance is zero in both
+// Available and Held. Returns the number of users removed.
+//
+// Use this to bound the per-user-keyed map under unbounded user churn.
+// Safe to call any time; nothing references a user record outside this
+// manager's own map.
+func (m *Manager) EvictEmpty() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	removed := 0
+	for user, tokens := range m.balances {
+		empty := true
+		for _, tb := range tokens {
+			if tb.Available != 0 || tb.Held != 0 {
+				empty = false
+				break
+			}
+		}
+		if empty {
+			delete(m.balances, user)
+			removed++
+		}
+	}
+	if removed > 0 {
+		_ = m.save()
+	}
+	return removed
 }
 
 // AvailableBalance returns the user's available balance for a token (convenience for hold calculations).

@@ -4,7 +4,7 @@ import { useCancelOrder } from '../hooks/useCancelOrder';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { useToast } from './ui/Toast';
 import { PAIRS } from '../config/generated';
-import { formatPrice } from '../lib/price';
+import { formatPriceAdaptive } from '../lib/price';
 
 export function OpenOrders() {
   const { openOrders } = useMyState();
@@ -81,7 +81,7 @@ export function OpenOrders() {
             <td className={o.side === 'buy' ? 'bid' : 'ask'}>
               {o.side.toUpperCase()}
             </td>
-            <td className="num">{formatPrice(o.price).toFixed(3)}</td>
+            <td className="num">{formatPriceAdaptive(o.price)}</td>
             <td className="num">{fmtRemaining(o.remaining, o.pair)}</td>
             <td style={{ textAlign: 'right' }}>
               <button

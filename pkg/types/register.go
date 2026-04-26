@@ -64,6 +64,16 @@ func RegisterDecoders(r *decoder.Registry) {
 		decoder.NewJSONDecoder[StateResponse](),
 	)
 
+	// GET_CANDLES (request + result)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_CANDLES", Kind: decoder.KindMessage},
+		decoder.NewJSONDecoder[GetCandlesRequest](),
+	)
+	r.Register(
+		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "GET_CANDLES", Kind: decoder.KindResult},
+		decoder.NewJSONDecoder[GetCandlesResponse](),
+	)
+
 	// EXPORT_HISTORY message + result
 	r.Register(
 		decoder.RegistryKey{OPType: "ORDERBOOK", OPCommand: "EXPORT_HISTORY", Kind: decoder.KindMessage},
