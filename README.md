@@ -2,7 +2,7 @@
 
 > A reference exchange implementation for **Flare Confidential Compute (FCC)**. Matching runs inside a TEE, open orders never touch the chain, and withdrawals are authorised by a TEE signature that the on-chain vault verifies before releasing funds.
 
-![Orderbook trading UI](frontend/ledger-pass3-main.png)
+![Orderbook trading UI](frontend/book-ui.png)
 
 This repository is aimed at teams evaluating FCC as a platform for a **serious on-chain product** — exchanges, structured-product vaults, settlement layers, or anything where pure smart contracts can't give you the privacy, fairness, or custody you need. The orderbook is deliberately non-trivial: price-time priority matching, real deposit and withdrawal custody, a working frontend, and a load-testing harness. Use it as a template, not a toy.
 

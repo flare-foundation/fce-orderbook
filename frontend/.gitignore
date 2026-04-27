@@ -6,4 +6,6 @@ src/config/generated.ts
 .env.local
 .playwright-mcp/
 *.png
+!book-ui.png
 tsconfig.tsbuildinfo
+

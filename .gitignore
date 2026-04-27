@@ -50,3 +50,4 @@ logs/
 
 # Vercel local project link
 frontend/.vercel/
+!frontend/book-ui.png
