@@ -21,14 +21,12 @@ tools/stress-test
 tools/test-setup
 
 # Stress-test local state (generated trader keys)
-tools/traders.json
+tools/traders*.json
 
 # Generated contract bindings (produced by scripts/generate-bindings.sh)
 tools/pkg/contracts/*/autogen.go
 tools/pkg/contracts/*/*.abi
 tools/pkg/contracts/*/*.bin
-
-tools/traders.json
 
 docs/superpowers
 
@@ -40,3 +38,13 @@ notes/
 DEPLOYMENT.md
 
 config/**/*.log
+
+# Stress-test runtime logs
+logs/
+
+# Claude Code local state
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+
+# Vercel local project link
+frontend/.vercel/

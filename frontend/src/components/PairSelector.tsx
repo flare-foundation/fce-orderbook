@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAllPairStats } from '../hooks/useAllPairStats';
+import { formatHumanAdaptive } from '../lib/price';
 
 const SYMBOL_NAMES: Record<string, string> = {
   FLR: 'Flare',
@@ -23,10 +24,7 @@ function displayName(base: string, quote: string): string {
 }
 
 function fmtPrice(n: number): string {
-  if (!n) return '—';
-  if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (n >= 1) return n.toFixed(4);
-  return n.toFixed(6);
+  return n ? formatHumanAdaptive(n) : '—';
 }
 
 function fmtChange(pct: number): string {

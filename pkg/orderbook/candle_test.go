@@ -80,8 +80,19 @@ func TestCandleRollingViaRing(t *testing.T) {
 		bucket := secs - secs%int64(tf)
 		last, ok := r.Latest()
 		if !ok || last.OpenTime != bucket {
+			open := price
+			if ok {
+				open = last.Close
+			}
+			high, low := open, open
+			if price > high {
+				high = price
+			}
+			if price < low {
+				low = price
+			}
 			r.Push(Candle{
-				OpenTime: bucket, Open: price, High: price, Low: price, Close: price,
+				OpenTime: bucket, Open: open, High: high, Low: low, Close: price,
 				Volume: qty, Trades: 1,
 			})
 			return
@@ -118,7 +129,61 @@ func TestCandleRollingViaRing(t *testing.T) {
 		t.Fatalf("len after next-bucket push: got %d, want 2", r.Len())
 	}
 	c, _ = r.Latest()
-	if c.OpenTime != base+60 || c.Open != 120 || c.High != 120 || c.Low != 120 || c.Close != 120 || c.Volume != 4 || c.Trades != 1 {
+	if c.OpenTime != base+60 || c.Open != 95 || c.High != 120 || c.Low != 95 || c.Close != 120 || c.Volume != 4 || c.Trades != 1 {
 		t.Fatalf("new bucket: got %+v", c)
+	}
+}
+
+// TestCandleContinuityAcrossBuckets verifies that consecutive candles share an
+// edge: the next bucket's Open equals the previous bucket's Close.
+func TestCandleContinuityAcrossBuckets(t *testing.T) {
+	r := NewRing[Candle](100)
+
+	push := func(ts int64, price, qty uint64, tf Timeframe) {
+		secs := ts / 1_000_000_000
+		bucket := secs - secs%int64(tf)
+		last, ok := r.Latest()
+		if !ok || last.OpenTime != bucket {
+			open := price
+			if ok {
+				open = last.Close
+			}
+			high, low := open, open
+			if price > high {
+				high = price
+			}
+			if price < low {
+				low = price
+			}
+			r.Push(Candle{
+				OpenTime: bucket, Open: open, High: high, Low: low, Close: price,
+				Volume: qty, Trades: 1,
+			})
+			return
+		}
+		if price > last.High {
+			last.High = price
+		}
+		if price < last.Low {
+			last.Low = price
+		}
+		last.Close = price
+		last.Volume += qty
+		last.Trades++
+		r.SetLatest(last)
+	}
+
+	const base = int64(1_699_920_000)
+	push(base*1_000_000_000, 100, 1, TF1m)            // bucket 0: O=H=L=C=100
+	push((base+30)*1_000_000_000, 80, 1, TF1m)        // bucket 0: C=80, L=80
+	push((base+90)*1_000_000_000, 130, 1, TF1m)       // bucket 1: O=80 (prev close), C=130
+	push((base+200)*1_000_000_000, 60, 1, TF1m)       // bucket 3 (skipped 2): O=130, C=60
+	push((base+260)*1_000_000_000, 60, 1, TF1m)       // bucket 4: O=60, C=60
+
+	all := r.Snapshot()
+	for i := 1; i < len(all); i++ {
+		if all[i].Open != all[i-1].Close {
+			t.Errorf("candle[%d].Open=%d != candle[%d].Close=%d", i, all[i].Open, i-1, all[i-1].Close)
+		}
 	}
 }
