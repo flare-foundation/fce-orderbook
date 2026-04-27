@@ -30,6 +30,7 @@ type RunConfig struct {
 	ProxyURL string
 	Duration time.Duration // 0 = perpetual (all traders persistent even if Role==Ephemeral)
 	Metrics  *Metrics
+	BookCap  *BookCap // optional process-wide per-side resting-order cap; nil = unlimited
 }
 
 // Run launches one goroutine per assignment and blocks until:
@@ -100,6 +101,17 @@ func executeAction(t *Trader, cfg RunConfig, act Action, recent *[]string) {
 		cfg.Metrics.RecordLatency("place_order", time.Since(start))
 		if resp.Status == "resting" || resp.Status == "partial" {
 			*recent = appendCapped(*recent, resp.OrderID, 16)
+			// If the per-side cap is configured, push and evict the oldest
+			// over-cap order. Cancel it via its own trader (the EOA that
+			// placed it). Latency is measured for the cancel alone.
+			if evicted := cfg.BookCap.Push(act.Side, resp.OrderID, t); evicted != nil {
+				cancelStart := time.Now()
+				if _, err := evicted.trader.CancelOrder(cfg.ProxyURL, evicted.orderID); err != nil {
+					cfg.Metrics.RecordError("cancel_order", classifyErr(err))
+				} else {
+					cfg.Metrics.RecordLatency("cancel_order", time.Since(cancelStart))
+				}
+			}
 		}
 	case "cancel":
 		if len(*recent) == 0 {
@@ -112,6 +124,9 @@ func executeAction(t *Trader, cfg RunConfig, act Action, recent *[]string) {
 			return
 		}
 		cfg.Metrics.RecordLatency("cancel_order", time.Since(start))
+		// Persona's own cancel succeeded — drop from BookCap so we don't
+		// later try to evict a no-longer-resting order.
+		cfg.BookCap.Remove(id)
 	}
 }
 

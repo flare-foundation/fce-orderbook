@@ -2,7 +2,7 @@ import { formatUnits } from 'viem';
 import { useBookState } from '../hooks/useBookState';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { PAIRS } from '../config/generated';
-import { formatPrice } from '../lib/price';
+import { formatPriceAdaptive } from '../lib/price';
 
 interface RecentTradesProps {
   pair: string;
@@ -25,8 +25,8 @@ export function RecentTrades({ pair }: RecentTradesProps) {
     ? tokenInfo[pairConfig.baseToken.toLowerCase()]?.decimals
     : undefined;
 
-  // newest first, max 40
-  const recent = [...matches].reverse().slice(0, 40);
+  // matches arrive newest-first from the backend; cap at 40 for display.
+  const recent = matches.slice(0, 40);
 
   function fmtQty(raw: number): string {
     if (baseDecimals === undefined) return String(raw);
@@ -66,7 +66,7 @@ export function RecentTrades({ pair }: RecentTradesProps) {
               className={`tape-row ${dir}`}
             >
               <span className="time">{fmtTime(t.timestamp)}</span>
-              <span className="price">{dir === 'up' ? '▲' : '▼'} {formatPrice(t.price).toFixed(3)}</span>
+              <span className="price">{dir === 'up' ? '▲' : '▼'} {formatPriceAdaptive(t.price)}</span>
               <span className="size">{fmtQty(t.quantity)}</span>
             </div>
           );

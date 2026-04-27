@@ -135,11 +135,11 @@ export function OrderForm({ pair, prefillPrice }: OrderFormProps) {
         <input
           type="number"
           min="0"
-          step="0.001"
+          step="0.000001"
           value={orderType === 'market' ? '' : price}
           onChange={e => setPrice(e.target.value)}
           disabled={orderType === 'market'}
-          placeholder={orderType === 'market' ? 'MARKET PRICE' : '0.000'}
+          placeholder={orderType === 'market' ? 'MARKET PRICE' : '0.000000'}
         />
       </div>
 

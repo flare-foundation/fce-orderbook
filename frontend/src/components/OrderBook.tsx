@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { formatUnits } from 'viem';
-import { formatPrice } from '../lib/price';
+import { formatPrice, formatPriceAdaptive } from '../lib/price';
 
 interface PriceLevel {
   price: number;
@@ -60,7 +60,7 @@ export function OrderBook({
     prevMidRef.current = mid;
   }
 
-  const fmtPrice = (raw: number) => formatPrice(raw).toFixed(3);
+  const fmtPrice = (raw: number) => formatPriceAdaptive(raw);
   const baseUnit = baseSymbol ? ` · ${baseSymbol}` : '';
   const quoteUnit = quoteSymbol ? ` · ${quoteSymbol}` : '';
 
@@ -98,10 +98,10 @@ export function OrderBook({
 
       <div className="ob-spread">
         <span className={`ob-mid ${dirRef.current}`}>
-          {mid ? mid.toFixed(3) : '—'}
+          {midRaw ? formatPriceAdaptive(midRaw) : '—'}
         </span>
         <span className="ob-spread-meta">
-          <span className="dim">SPREAD</span> {spread ? spread.toFixed(3) : '—'}
+          <span className="dim">SPREAD</span> {spreadRaw ? formatPriceAdaptive(spreadRaw) : '—'}
           {spread > 0 && (
             <> <span className="dim">/</span> {spreadBps.toFixed(1)} bps</>
           )}

@@ -50,6 +50,7 @@ func main() {
 	priceSymbolF := flag.String("price-symbol", "", "CoinGecko asset id (e.g. bitcoin, ethereum); overrides tier's PriceSymbol")
 	priceIntervalF := flag.Duration("price-interval", 60*time.Second, "price-oracle poll interval (clamped to >=30s)")
 	priceVsCurrencyF := flag.String("price-vs-currency", "usd", "CoinGecko vs_currencies param")
+	maxPerSideF := flag.Int("max-per-side", 20, "max resting limit orders per side across the soak; 0 = unlimited")
 	flag.Parse()
 
 	if *instructionSenderF == "" {
@@ -236,6 +237,7 @@ func main() {
 		ProxyURL: *pf,
 		Duration: tier.Duration,
 		Metrics:  metrics,
+		BookCap:  stress.NewBookCap(*maxPerSideF),
 	})
 	logger.Infof("run loop exited after %s", time.Since(start))
 

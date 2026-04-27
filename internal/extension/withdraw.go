@@ -52,14 +52,13 @@ func (e *Extension) processWithdraw(action teetypes.Action, df *instruction.Data
 		return buildResult(action, df, nil, 0, fmt.Errorf("signing withdrawal: %w", err))
 	}
 
-	// Record in history.
 	e.mu.Lock()
-	e.history.withdrawals[user] = append(e.history.withdrawals[user], types.WithdrawalRecord{
+	e.history.withdrawals[user] = appendBounded(e.history.withdrawals[user], types.WithdrawalRecord{
 		Token:     token,
 		Amount:    amount,
 		Address:   to,
 		Timestamp: time.Now().UnixNano(),
-	})
+	}, MaxUserWithdrawsHistory)
 	e.mu.Unlock()
 
 	bal := e.balances.Get(user, token)

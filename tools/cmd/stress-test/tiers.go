@@ -96,36 +96,40 @@ func tierByName(name string) (Tier, error) {
 		// cadence as `day`; price floats with the real market, MM spread is
 		// ±1% of the live mid, qty 0.005–0.1 BTC per order so a $100k deposit
 		// lasts many hours at $60–100k/BTC.
+		// Walker bounds are tighter than MM spread (50 vs 100bps) so walker
+		// limit orders never cross MM quotes — prevents the book from being
+		// drained by self-fills against the MM at live prices.
 		return Tier{
-			Name: "btc-day", Mix: PersonaMix{2, 2, 1, 0, 0},
+			Name: "btc-day", Mix: PersonaMix{4, 2, 1, 0, 0},
 			Duration: 0,
-			PriceSymbol: "bitcoin", SpreadBps: 100, WalkerLowBps: 100, WalkerHighBps: 100,
+			PriceSymbol: "bitcoin", SpreadBps: 100, WalkerLowBps: 50, WalkerHighBps: 50,
 			MMRefresh: 20 * time.Second, TakerPause: 45 * time.Second, WalkerPause: 60 * time.Second,
 			MMQtyMilliMin: 5, MMQtyMilliMax: 100,
 			TakerQtyMilliMin: 5, TakerQtyMilliMax: 100,
 			WalkerQtyMilliMin: 5, WalkerQtyMilliMax: 100,
 		}, nil
 	case "ETH-DAY":
-		// Soak profile tracking live ETH/USD. qty 0.1–1 ETH.
+		// Soak profile tracking live ETH/USD. qty 0.1–1 ETH. Walker bounds
+		// tighter than MM spread for the same reason as btc-day.
 		return Tier{
-			Name: "eth-day", Mix: PersonaMix{2, 2, 1, 0, 0},
+			Name: "eth-day", Mix: PersonaMix{4, 2, 1, 0, 0},
 			Duration: 0,
-			PriceSymbol: "ethereum", SpreadBps: 100, WalkerLowBps: 100, WalkerHighBps: 100,
+			PriceSymbol: "ethereum", SpreadBps: 100, WalkerLowBps: 50, WalkerHighBps: 50,
 			MMRefresh: 20 * time.Second, TakerPause: 45 * time.Second, WalkerPause: 60 * time.Second,
 			MMQtyMilliMin: 100, MMQtyMilliMax: 1000,
 			TakerQtyMilliMin: 100, TakerQtyMilliMax: 1000,
 			WalkerQtyMilliMin: 100, WalkerQtyMilliMax: 1000,
 		}, nil
 	case "FLR-DAY":
-		// Soak profile tracking live FLR/USD via CoinGecko. FLR trades
-		// sub-dollar (~$0.008), so raw price resolution is coarse (a 1bps
-		// spread rounds to zero and is clamped to 1 raw = $0.001, ~12% at
-		// current price); walker bounds are wider on purpose so the hi/lo
-		// integer round doesn't collapse to a single tick. qty 1000-5000 FLR
-		// per order (~$8-$40 at $0.008) keeps the soak balance-neutral and
-		// lets a 100k FLR deposit last many hours.
+		// Soak profile tracking live FLR/USD via CoinGecko. With
+		// pricePrecision=1_000_000 (1 raw tick = $0.000001) FLR's ~$0.008 has
+		// plenty of headroom for a real spread; walker bounds stay at ±5%
+		// because at the lower precision the hi/lo integer round used to
+		// collapse to a single tick — kept wider for safety, not strictly
+		// needed now. qty 1000-5000 FLR per order (~$8-$40 at $0.008) keeps
+		// the soak balance-neutral over a multi-hour run.
 		return Tier{
-			Name: "flr-day", Mix: PersonaMix{2, 2, 1, 0, 0},
+			Name: "flr-day", Mix: PersonaMix{4, 2, 1, 0, 0},
 			Duration: 0,
 			PriceSymbol: "flare-networks", SpreadBps: 100, WalkerLowBps: 500, WalkerHighBps: 500,
 			MMRefresh: 20 * time.Second, TakerPause: 45 * time.Second, WalkerPause: 60 * time.Second,

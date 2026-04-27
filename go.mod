@@ -5,7 +5,7 @@ go 1.25.1
 require (
 	github.com/emirpasic/gods/v2 v2.0.0-alpha
 	github.com/ethereum/go-ethereum v1.16.7
-	github.com/flare-foundation/go-flare-common v1.2.1-0.20260312105002-c0e3c9ae661f
+	github.com/flare-foundation/go-flare-common v1.2.1-0.20260416121615-dd8e17527a39
 	github.com/flare-foundation/tee-node v0.0.0
 )
 

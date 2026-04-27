@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { formatPrice } from '../lib/price';
+import { formatPrice, formatHumanAdaptive } from '../lib/price';
 import type { BookMatch } from '../lib/orderbook';
 import { PairSelector } from './PairSelector';
 
@@ -54,7 +54,7 @@ export function MarketStats({ pair, pairs, onPairChange, bids, asks, matches }: 
   }
   const dir = lastDir.current || (absChange >= 0 ? 'up' : 'dn');
 
-  const fmtPrice = (n: number) => n > 0 ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : '—';
+  const fmtPrice = (n: number) => n > 0 ? formatHumanAdaptive(n) : '—';
   const fmtBase = (n: number) => n > 0 ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '—';
   const fmtQuote = (n: number) => n > 0 ? '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—';
   const changeDir = absChange > 0 ? 'up' : absChange < 0 ? 'dn' : '';
@@ -66,7 +66,7 @@ export function MarketStats({ pair, pairs, onPairChange, bids, asks, matches }: 
       <div className={`mstats-mid ${dir}`}>
         <div className={`price ${dir}`}>{fmtPrice(displayPrice)}</div>
         <div className={`price-change ${changeDir || 'up'}`}>
-          <span>{changeSign}{absChange.toFixed(2)}</span>
+          <span>{changeSign}{formatHumanAdaptive(absChange)}</span>
           <span className="pct">{changeSign}{pctChange.toFixed(2)}%</span>
         </div>
       </div>

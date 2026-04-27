@@ -131,3 +131,44 @@ func (s *OrderSide) Depth() []PriceLevel {
 func (s *OrderSide) Len() int {
 	return s.count
 }
+
+// LevelCount returns the number of distinct price levels on this side.
+func (s *OrderSide) LevelCount() int {
+	return s.priceLevels.Size()
+}
+
+// EvictWorstLevel removes the entire worst-priced level (lowest bid / highest ask)
+// and returns the orders that were on it. Returns nil if the side is empty.
+func (s *OrderSide) EvictWorstLevel() []*Order {
+	if s.priceLevels.Empty() {
+		return nil
+	}
+	node := s.priceLevels.Right()
+	queue := node.Value
+	price := node.Key
+
+	evicted := make([]*Order, 0, queue.Len())
+	for e := queue.Front(); e != nil; e = e.Next() {
+		o := e.Value.(*Order)
+		evicted = append(evicted, o)
+		delete(s.orders, o.ID)
+		s.volume -= o.Remaining
+		s.count--
+	}
+	s.priceLevels.Remove(price)
+	return evicted
+}
+
+// GetOrder returns a pointer to the resting order with the given ID, or nil.
+func (s *OrderSide) GetOrder(orderID string) *Order {
+	loc, ok := s.orders[orderID]
+	if !ok {
+		return nil
+	}
+	queue, found := s.priceLevels.Get(loc.price)
+	if !found {
+		return nil
+	}
+	_ = queue
+	return loc.element.Value.(*Order)
+}
