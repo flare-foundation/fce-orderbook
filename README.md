@@ -14,7 +14,6 @@ This repository is aimed at teams evaluating FCC as a platform for a **serious o
 - **Fair, deterministic matching.** Price-time priority, enforced by code that's pinned to a hash registered on-chain. Fills happen instantly inside the TEE — no per-fill gas, no on-chain settlement round trip.
 - **Trust-minimised custody.** An on-chain vault holds tokens. Funds release only when the TEE produces a signed authorisation — and the TEE's signing key never leaves attested hardware and is backed up across data providers, so no single operator can drain the vault.
 - **Uses the full FCC platform.** On-chain instructions for deposits and withdrawals, off-chain direct actions for trading and reads, and outbound TEE signatures for settlement. All three integration paths are used here, end-to-end.
-- **Production-shaped.** Reproducible Docker build, Foundry contracts, a working trading frontend, end-to-end tests, and a load generator that runs from a one-minute smoke to multi-day soak.
 
 ---
 
@@ -28,7 +27,6 @@ Three concrete properties fall out of this repo:
 2. **Matching is deterministic and attested.** The exact code that runs the matching is pinned to a hash registered on-chain. Changing it requires a public, governable rollout — not a silent server swap. What you audit is what runs.
 3. **Custody follows the signature, not the operator.** The vault releases funds on a signature from the TEE, not on a call from a privileged operator. You don't trust the team running the TEE — you trust the code hash and the data-provider consensus that admits it.
 
-What FCC does **not** give you: instructions are "fire and forget" (no ordering across submissions), the public proxy can delay or censor inbound actions, and a compromised TEE hardware vendor is out of scope. See [Security Model](#security-model) for a full list.
 
 ---
 
