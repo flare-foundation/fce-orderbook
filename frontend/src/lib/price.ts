@@ -12,9 +12,13 @@ export const formatPrice = (rawPrice: number): number =>
 
 // formatHumanAdaptive picks a sensible decimal count based on magnitude of an
 // already-human-units price (e.g. chart axis ticks, pre-divided values).
+// Magnitude is taken as Math.abs so signed deltas (price changes) pick the
+// same decimal count as the underlying price. ≥1000 gets thousands separators.
 export const formatHumanAdaptive = (v: number): string => {
-  if (v >= 100) return v.toFixed(2);
-  if (v >= 1) return v.toFixed(4);
+  const abs = Math.abs(v);
+  if (abs >= 1000) return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (abs >= 100) return v.toFixed(2);
+  if (abs >= 1) return v.toFixed(4);
   return v.toFixed(6);
 };
 

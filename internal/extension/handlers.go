@@ -308,11 +308,22 @@ func (e *Extension) updateCandles(m orderbook.Match) {
 		bucket := secs - (secs % int64(tf))
 		last, ok := ring.Latest()
 		if !ok || last.OpenTime != bucket {
+			open := m.Price
+			if ok {
+				open = last.Close
+			}
+			high, low := open, open
+			if m.Price > high {
+				high = m.Price
+			}
+			if m.Price < low {
+				low = m.Price
+			}
 			ring.Push(orderbook.Candle{
 				OpenTime: bucket,
-				Open:     m.Price,
-				High:     m.Price,
-				Low:      m.Price,
+				Open:     open,
+				High:     high,
+				Low:      low,
 				Close:    m.Price,
 				Volume:   m.Quantity,
 				Trades:   1,
