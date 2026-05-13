@@ -1,11 +1,10 @@
 node_modules
 dist
 .vite
-src/config/generated.ts
 .env
 .env.local
 .playwright-mcp/
 *.png
 !book-ui.png
 tsconfig.tsbuildinfo
-
+.vercel

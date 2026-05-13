@@ -24,37 +24,57 @@ If your setup isn't standard, tune `.env`:
 
 If the banner "TEE proxy unreachable" appears at the top of the page, the dev server can't reach the upstream proxy. Check `VITE_PROXY_UPSTREAM` and that the TEE proxy is actually running (`docker compose ps` or `./scripts/start-services.sh`).
 
-## Production / serving a built bundle
+## Dev against a remote TEE proxy
 
-Once the frontend is built (`npm run build`), there's no more vite dev server in the middle — the static bundle runs in the browser and makes cross-origin requests directly. The TEE proxy doesn't emit CORS headers, so you need the **cors-proxy** sidecar in front:
+If the proxy lives somewhere else (e.g. a GCP deployment) and you still want to use `npm run dev`, just point `VITE_PROXY_UPSTREAM` at it. Vite forwards server-side, so the browser stays same-origin and no CORS is involved.
 
-```bash
-# From the orderbook root (one-off — not part of start-services.sh because it's
-# dev-tooling-specific, not part of the extension runtime):
-go run ./cmd/cors-proxy \
-  --target http://localhost:6664 \
-  --listen :6670 \
-  --allow-origin http://your-frontend-origin
+```
+VITE_PROXY_UPSTREAM=https://tee-proxy-coston2-orderbook.flare.rocks
+VITE_INSTRUCTION_SENDER=0x...   # if the live INSTRUCTION_SENDER differs from generated.ts
+VITE_TEE_PROXY_URL=             # leave empty
 ```
 
-Then build with `VITE_TEE_PROXY_URL` pointing at the cors-proxy:
+## Production / serving a built bundle
+
+Once the frontend is built (`npm run build`), there's no more vite dev server in the middle — the static bundle runs in the browser and makes cross-origin requests directly. The TEE proxy doesn't emit CORS headers. Two ways to handle that:
+
+### Option A — Vercel (recommended for remote proxy)
+
+`vercel.json` (included in this repo) rewrites `/direct`, `/state`, `/action` server-side to the remote TEE proxy, so the browser stays same-origin. **Update the destination URLs in `vercel.json` if your proxy moves.**
+
+On the Vercel project, set:
+
+| Variable | Value |
+|---|---|
+| `VITE_TEE_PROXY_URL` | *(empty)* — use the rewrites |
+| `VITE_INSTRUCTION_SENDER` | the live `0x...` address |
+| `VITE_DIRECT_API_KEY` | the key configured on the remote proxy |
+| `VITE_WALLETCONNECT_PROJECT_ID` | your project ID |
+| `VITE_SHOW_FAUCET` | `false` for a real deployment |
+
+Vercel caveat: the `prebuild` hook runs `sync-config`, which expects the parent `orderbook/` repo. If you deploy the `frontend/` directory alone, sync-config will silently overwrite `generated.ts` with empty values. Workarounds: (a) drop `src/config/generated.ts` from `.gitignore` and commit it before pushing, then remove the `sync-config &&` prefix from the `build` npm script; or (b) deploy from the monorepo root and set Vercel's root directory to `frontend/`.
+
+### Option B — cors-proxy sidecar (local / self-hosted)
 
 ```bash
+# From the orderbook root:
+go run ./cmd/cors-proxy --target http://localhost:6664 --listen :6670 --allow-origin http://your-frontend-origin
 VITE_TEE_PROXY_URL=http://localhost:6670 npm run build
 npx serve dist
 ```
 
-> **Port note:** Chrome blocks ports 6665–6669 (IRC range) as "unsafe" — the browser refuses to connect regardless of headers. Use 6670+ for the cors-proxy.
+> **Port note:** Chrome blocks ports 6665–6669 (IRC range) as "unsafe" — use 6670+ for the cors-proxy.
 
 ## Environment Variables
 
 | Variable | Default (dev) | Description |
 |---|---|---|
-| `VITE_TEE_PROXY_URL` | *(empty)* | Leave empty in dev (uses vite proxy). Set to cors-proxy URL for prod. |
-| `VITE_PROXY_UPSTREAM` | `http://localhost:6674` | Where vite's dev proxy forwards TEE calls. |
+| `VITE_TEE_PROXY_URL` | *(empty)* | Leave empty in dev and on Vercel (uses vite proxy / rewrites). Set to cors-proxy URL for the sidecar flow. |
+| `VITE_PROXY_UPSTREAM` | `http://localhost:6674` | Where vite's dev proxy forwards TEE calls. Point at the remote proxy URL for remote dev. |
 | `VITE_DIRECT_API_KEY` | `test-api-key-change-me` | API key for `/direct` endpoint. |
 | `VITE_SHOW_FAUCET` | `true` | Show the test-token faucet button. |
 | `VITE_WALLETCONNECT_PROJECT_ID` | *(empty)* | WalletConnect project ID. |
+| `VITE_INSTRUCTION_SENDER` | *(empty)* | Override for the deployed `INSTRUCTION_SENDER` contract address. Falls back to `generated.ts`. |
 
 ## Config Sync
 

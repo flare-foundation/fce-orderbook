@@ -14,6 +14,28 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "../.."); // orderbook/
 const outPath = resolve(__dirname, "../src/config/generated.ts");
 
+// If the parent orderbook/ config files aren't reachable (e.g. building on
+// Vercel from the frontend subdirectory), leave any existing generated.ts in
+// place instead of overwriting it with empty defaults.
+const requiredSources = [
+  resolve(root, "config/extension.env"),
+  resolve(root, "config/test-tokens.env"),
+  resolve(root, "config/pairs.json"),
+];
+const parentMissing = requiredSources.some((p) => !existsSync(p));
+if (parentMissing) {
+  if (existsSync(outPath)) {
+    console.log(
+      "[sync-config] parent orderbook/ config not found; keeping existing generated.ts"
+    );
+    process.exit(0);
+  }
+  console.error(
+    "[sync-config] parent orderbook/ config not found and no generated.ts to fall back on"
+  );
+  process.exit(1);
+}
+
 function readEnvFile(path: string): Record<string, string> {
   if (!existsSync(path)) return {};
   const lines = readFileSync(path, "utf-8").split("\n");

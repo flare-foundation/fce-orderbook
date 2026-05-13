@@ -9,4 +9,7 @@ export const env = {
   showFaucet: (import.meta.env.VITE_SHOW_FAUCET as string) !== "false",
   /** WalletConnect project ID. */
   walletConnectProjectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string || "",
+  /** Override for the deployed OrderbookInstructionSender contract address.
+   *  Falls back to the value baked into generated.ts by sync-config. */
+  instructionSender: import.meta.env.VITE_INSTRUCTION_SENDER as string || "",
 } as const;

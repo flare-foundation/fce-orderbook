@@ -17,9 +17,10 @@ The full lifecycle runs in this order. Token deployment and config must happen *
 2. extension-setup.sh   → deploy tokens, write pairs.json, mint, approve
 3. docker compose up    → extension starts with correct config
 4. post-build.sh        → register TEE version + machine, setExtensionId
-5. test-deposit         → deposit tokens (on-chain instructions)
-6. test-orders          → place/cancel orders (direct instructions)
-7. test-withdraw        → withdraw tokens (on-chain + executeWithdrawal)
+5. extension-post-setup.sh → set InstructionSender TEE signer address (enables executeWithdrawal)
+6. test-deposit         → deposit tokens (on-chain instructions)
+7. test-orders          → place/cancel orders (direct instructions)
+8. test-withdraw        → withdraw tokens (on-chain + executeWithdrawal)
 ```
 
 Run everything at once: `./scripts/full-setup.sh --test`
