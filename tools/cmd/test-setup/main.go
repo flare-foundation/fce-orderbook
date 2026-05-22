@@ -49,8 +49,6 @@ const txSpacing = 500 * time.Millisecond
 
 const (
 	testTokenArtifact = "../out/TestToken.sol/TestToken.json"
-	pairsConfigPath   = "../config/pairs.json"
-	testTokensEnvPath = "../config/test-tokens.env"
 	mintAmount        = 1_000_000
 	approveAmount     = 1_000_000
 )
@@ -73,6 +71,12 @@ func main() {
 	}
 
 	instructionSenderAddr := common.HexToAddress(*instructionSenderF)
+
+	// Network-scoped config: derive from the addresses file path so each chain
+	// (coston, coston2, local) keeps its own pairs.json and test-tokens.env.
+	cfgDir := configs.NetworkConfigDir(*af)
+	pairsConfigPath := filepath.Join(cfgDir, "pairs.json")
+	testTokensEnvPath := filepath.Join(cfgDir, "test-tokens.env")
 
 	s, err := support.DefaultSupport(*af, *cf)
 	if err != nil {
@@ -135,6 +139,9 @@ func main() {
 			{Name: "ETH/USDT", BaseToken: addrs["TETH"].Hex(), QuoteToken: addrs["TUSDT"].Hex()},
 		}
 		pairsJSON, _ := json.MarshalIndent(pairs, "", "    ")
+		if err := os.MkdirAll(filepath.Dir(pairsConfigPath), 0755); err != nil {
+			fccutils.FatalWithCause(fmt.Errorf("creating pairs.json dir: %w", err))
+		}
 		if err := os.WriteFile(pairsConfigPath, pairsJSON, 0644); err != nil {
 			fccutils.FatalWithCause(fmt.Errorf("writing pairs.json: %w", err))
 		}

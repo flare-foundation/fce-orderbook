@@ -105,8 +105,8 @@ func deployFreshInstructionSender(t *testing.T) (common.Address, *orderbook.Orde
 
 	address, tx, contract, err := orderbook.DeployOrderbookInstructionSender(
 		opts, testSupport.ChainClient,
-		testSupport.Addresses.TeeExtensionRegistry,
-		testSupport.Addresses.TeeMachineRegistry,
+		testSupport.Addresses.FlareTeeManager,
+		testSupport.Addresses.FlareTeeManager,
 		admins,
 	)
 	if err != nil {

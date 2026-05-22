@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -37,6 +38,15 @@ func init() {
 	if err != nil {
 		panic("cannot read another privateKey with funds")
 	}
+}
+
+// NetworkConfigDir returns the per-network config directory derived from the
+// addresses-file path. e.g. "./config/coston/deployed-addresses.json" →
+// "../config/coston" (paths are relative to tools/, which is where the Go
+// commands run from).
+func NetworkConfigDir(addressesFile string) string {
+	network := filepath.Base(filepath.Dir(addressesFile))
+	return filepath.Join("..", "config", network)
 }
 
 func ReadAddresses[T any](filePath string, dest *T) error {

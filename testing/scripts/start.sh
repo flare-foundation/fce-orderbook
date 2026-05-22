@@ -25,6 +25,9 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[start]${NC} $*"; }
 die()  { echo -e "${RED}[start] ERROR:${NC} $*" >&2; exit 1; }
 
+# --- Clear shutdown flag (if stop.sh was run previously) ---
+rm -f /tmp/flare-testing-shutdown
+
 # --- Verify prerequisites ---
 command -v tmux >/dev/null 2>&1 || die "tmux is not installed"
 command -v claude >/dev/null 2>&1 || die "Claude Code CLI is not installed"
@@ -37,6 +40,10 @@ for agent in smoketest edgecase chaos; do
     die "Session 'testing-$agent' already running. Run stop.sh first."
   fi
 done
+
+if tmux has-session -t "testing-sequencer" 2>/dev/null; then
+  die "Session 'testing-sequencer' already running. Run stop.sh first."
+fi
 
 # --- Start ngrok (if not already running) ---
 if ! curl -sf http://localhost:4040/api/tunnels >/dev/null 2>&1; then
@@ -97,20 +104,22 @@ done
 log "Waiting for agents to initialize after confirmation (15s)..."
 sleep 15
 
-# --- Register heartbeat schedules ---
-for agent in smoketest edgecase chaos; do
-  log "Registering heartbeat for $agent..."
-  tmux send-keys -t "testing-$agent" "/start-heartbeat" Enter || true
-  sleep 3
-done
+# --- Launch the sequencer ---
+log "Starting sequencer..."
+tmux new-session -d -s testing-sequencer \
+  "bash $PROJECT_DIR/scripts/sequencer.sh 2>&1 | tee -a $PROJECT_DIR/summary/sequencer.log"
 
 log ""
-log "All agents started!"
+log "All agents and sequencer started!"
 log ""
-log "  Attach to an agent:"
+log "  Attach to a session:"
+log "    tmux attach -t testing-sequencer   (rotation control)"
 log "    tmux attach -t testing-smoketest"
 log "    tmux attach -t testing-edgecase"
 log "    tmux attach -t testing-chaos"
+log ""
+log "  Edit rotation: $PROJECT_DIR/shared/rotation.conf"
+log "  Sequencer log: $PROJECT_DIR/summary/sequencer.log"
 log ""
 log "  Detach from a session: Ctrl+B then D"
 log "  Stop all:  bash $SCRIPT_DIR/stop.sh"

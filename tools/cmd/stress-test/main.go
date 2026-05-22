@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -63,7 +64,7 @@ func main() {
 		logger.Infof("logging to %s", *logFileF)
 	}
 
-	_ = godotenv.Load("../config/test-tokens.env")
+	_ = godotenv.Load(filepath.Join(configs.NetworkConfigDir(*af), "test-tokens.env"))
 	quoteTokenStr := os.Getenv("QUOTE_TOKEN")
 	if quoteTokenStr == "" {
 		fmt.Fprintln(os.Stderr, "QUOTE_TOKEN env var must be set — run test-setup first")

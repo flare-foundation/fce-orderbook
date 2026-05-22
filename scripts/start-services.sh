@@ -2,15 +2,18 @@
 #
 # Start extension TEE node and proxy.
 #
-# By default, starts services via Docker Compose:
-#   - LOCAL_MODE=true  (default) → uses docker-compose.yaml only (local devnet)
-#   - LOCAL_MODE=false            → also attaches docker-compose.coston2.yaml
+# By default, starts services via Docker Compose, picking the compose overlay
+# from --chain (or env CHAIN, or legacy LOCAL_MODE):
+#   --chain local    → docker-compose.yaml only (local devnet)
+#   --chain coston   → + docker-compose.coston.yaml
+#   --chain coston2  → + docker-compose.coston2.yaml
 #
 # Pass --local to start services as background Go processes instead of Docker.
 #
 # Usage:
-#   ./scripts/start-services.sh              # docker compose (default)
-#   ./scripts/start-services.sh --local      # background Go processes
+#   ./scripts/start-services.sh                       # local devnet, docker compose
+#   ./scripts/start-services.sh --chain coston        # Coston, docker compose
+#   ./scripts/start-services.sh --local               # local devnet, Go processes
 #
 # Prerequisites:
 #   - Infrastructure running (Hardhat, indexer, Redis, normal TEE + proxy)
@@ -27,10 +30,14 @@ die()  { echo -e "${RED}[start-services] ERROR:${NC} $*" >&2; exit 1; }
 
 # --- Parse flags ---
 USE_LOCAL=false
-for arg in "$@"; do
-    case "$arg" in
-        --local) USE_LOCAL=true ;;
-        *) die "Unknown argument: $arg" ;;
+CHAIN="${CHAIN:-}"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --local) USE_LOCAL=true; shift ;;
+        --chain) [[ $# -ge 2 ]] || die "--chain requires a value (local|coston|coston2)"
+                 CHAIN="$2"; shift 2 ;;
+        --chain=*) CHAIN="${1#--chain=}"; shift ;;
+        *) die "Unknown argument: $1" ;;
     esac
 done
 
@@ -52,8 +59,22 @@ EXTENSION_ID="${EXTENSION_ID:-}"
 PROXY_PRIVATE_KEY="${PROXY_PRIVATE_KEY:-0x983760a4ebf75b2ac3a93531168a0f225d01e5dc6e3568adbd46233ba1fb4fa4}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
 
+# --- Resolve CHAIN (flag > env > legacy LOCAL_MODE) ---
+if [[ -z "$CHAIN" ]]; then
+    if [[ "$LOCAL_MODE" == "true" ]]; then
+        CHAIN="local"
+    else
+        CHAIN="coston2"  # legacy
+    fi
+fi
+case "$CHAIN" in
+    local|coston|coston2) ;;
+    *) die "Unknown --chain value: $CHAIN (valid: local, coston, coston2)" ;;
+esac
+
 [[ -n "$EXTENSION_ID" ]] || die "EXTENSION_ID not set. Run pre-build.sh first or set it manually."
 
+log "Chain:        $CHAIN"
 log "Extension ID: $EXTENSION_ID"
 log "Local mode:   $LOCAL_MODE"
 
@@ -62,6 +83,17 @@ log "Local mode:   $LOCAL_MODE"
 # ============================================================
 if [[ "$USE_LOCAL" == "false" ]]; then
     log "Starting services with Docker Compose..."
+
+    # Dockerfile expects SOURCE_DATE_EPOCH for reproducible builds — see REPRODUCIBILITY.md.
+    # Without it, `touch -h -d @${SOURCE_DATE_EPOCH}` in the builder stage fails with "invalid date format '@'".
+    if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+        if SOURCE_DATE_EPOCH=$(git -C "$PROJECT_DIR" log -1 --format=%ct 2>/dev/null) && [[ -n "$SOURCE_DATE_EPOCH" ]]; then
+            export SOURCE_DATE_EPOCH
+        else
+            export SOURCE_DATE_EPOCH=0
+        fi
+    fi
+    log "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
 
     # --- Build tee-proxy image locally if no remote registry is configured ---
     if [[ -z "${REGISTRY:-}" ]]; then
@@ -81,9 +113,27 @@ if [[ "$USE_LOCAL" == "false" ]]; then
 
     COMPOSE_FILES=("-f" "$PROJECT_DIR/docker-compose.yaml")
 
-    if [[ "$LOCAL_MODE" != "true" ]]; then
-        log "Coston2 mode detected — attaching docker-compose.coston2.yaml"
-        COMPOSE_FILES+=("-f" "$PROJECT_DIR/docker-compose.coston2.yaml")
+    case "$CHAIN" in
+        local) ;;
+        coston)
+            log "Coston mode — attaching docker-compose.coston.yaml"
+            COMPOSE_FILES+=("-f" "$PROJECT_DIR/docker-compose.coston.yaml")
+            ;;
+        coston2)
+            log "Coston2 mode — attaching docker-compose.coston2.yaml"
+            COMPOSE_FILES+=("-f" "$PROJECT_DIR/docker-compose.coston2.yaml")
+            ;;
+    esac
+
+    # Reproducible builds: clamp mtimes to the commit timestamp.
+    # docker-compose.yaml forwards this to the Dockerfile as a build arg.
+    if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+        if SOURCE_DATE_EPOCH="$(git -C "$PROJECT_DIR" log -1 --format=%ct 2>/dev/null)" && [[ -n "$SOURCE_DATE_EPOCH" ]]; then
+            export SOURCE_DATE_EPOCH
+        else
+            export SOURCE_DATE_EPOCH="$(date +%s)"
+            warn "Not a git repo or no commits — using current time as SOURCE_DATE_EPOCH (build not reproducible)"
+        fi
     fi
 
     docker compose "${COMPOSE_FILES[@]}" up -d --build || die "docker compose up failed"
@@ -110,11 +160,11 @@ if [[ "$USE_LOCAL" == "false" ]]; then
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo -e "${CYAN}Mode${NC}"
-    if [[ "$LOCAL_MODE" == "true" ]]; then
-        echo "  Local devnet"
-    else
-        echo "  Coston2 testnet"
-    fi
+    case "$CHAIN" in
+        local)   echo "  Local devnet" ;;
+        coston)  echo "  Coston testnet (chain_id=16)" ;;
+        coston2) echo "  Coston2 testnet (chain_id=114)" ;;
+    esac
     echo ""
     echo -e "${CYAN}Services${NC}"
     echo "  redis, ext-proxy, extension-tee"
@@ -122,7 +172,7 @@ if [[ "$USE_LOCAL" == "false" ]]; then
     echo ""
     echo -e "${CYAN}Commands${NC}"
     echo "  Logs:    docker compose ${COMPOSE_FILES[*]} logs -f"
-    echo "  Stop:    ./scripts/stop-services.sh"
+    echo "  Stop:    ./scripts/stop-services.sh --chain $CHAIN"
     exit 0
 fi
 
