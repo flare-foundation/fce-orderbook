@@ -100,10 +100,14 @@ func deployFreshInstructionSender(t *testing.T) (common.Address, *orderbook.Orde
 		t.Fatalf("failed to create transactor: %v", err)
 	}
 
+	deployer := crypto.PubkeyToAddress(testSupport.Prv.PublicKey)
+	admins := []common.Address{deployer}
+
 	address, tx, contract, err := orderbook.DeployOrderbookInstructionSender(
 		opts, testSupport.ChainClient,
 		testSupport.Addresses.FlareTeeManager,
 		testSupport.Addresses.FlareTeeManager,
+		admins,
 	)
 	if err != nil {
 		t.Fatalf("failed to deploy InstructionSender: %v", err)

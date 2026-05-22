@@ -22,10 +22,13 @@ func DeployInstructionSender(s *support.Support) (common.Address, *orderbook.Ord
 		return common.Address{}, nil, errors.Errorf("failed to create transactor: %s", err)
 	}
 
+	deployer := crypto.PubkeyToAddress(s.Prv.PublicKey)
+	admins := []common.Address{deployer}
+
 	// Both registry args are the FlareTeeManager diamond proxy: the diamond
 	// routes ExtensionManager and MachineManager calls to the right facets.
 	address, tx, contract, err := orderbook.DeployOrderbookInstructionSender(
-		opts, s.ChainClient, s.Addresses.FlareTeeManager, s.Addresses.FlareTeeManager,
+		opts, s.ChainClient, s.Addresses.FlareTeeManager, s.Addresses.FlareTeeManager, admins,
 	)
 	if err != nil {
 		return common.Address{}, nil, errors.Errorf("failed to deploy contract: %s", err)
@@ -242,7 +245,7 @@ func findInstructionID(s *support.Support, receipt *types.Receipt) (common.Hash,
 	}
 
 	for _, log := range receipt.Logs {
-		instructionSent, err := s.TeeExtensionRegistry.ParseTeeInstructionsSent(*log)
+		instructionSent, err := s.TeeVerification.ParseTeeInstructionsSent(*log)
 		if err == nil {
 			return instructionSent.InstructionId, nil
 		}

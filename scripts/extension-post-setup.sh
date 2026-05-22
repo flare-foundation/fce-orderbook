@@ -2,13 +2,14 @@
 # extension-post-setup.sh — Extension-specific setup that runs AFTER Docker Compose
 # and AFTER the TEE has been registered on-chain by post-build.sh.
 #
-# This hook runs once the TEE node is live and registered in TeeMachineRegistry.
-# Use it for any setup that needs the TEE's on-chain identity to exist — things
-# you couldn't do in extension-setup.sh because the TEE didn't exist yet.
+# This hook runs once the TEE node is live and registered on-chain via the
+# FlareTeeManager diamond. Use it for any setup that needs the TEE's on-chain
+# identity to exist — things you couldn't do in extension-setup.sh because the
+# TEE didn't exist yet.
 #
 # For the orderbook this:
-#   1. Looks up the TEE node's signing address from TeeMachineRegistry
-#      (getActiveTeeMachines returns the registered TEE IDs for this extension)
+#   1. Looks up the TEE node's signing address via FlareTeeManager.getActiveTeeMachines
+#      (returns the registered TEE IDs for this extension)
 #   2. Calls setTeeAddress() on InstructionSender so executeWithdrawal can
 #      verify TEE-signed withdrawal authorizations via ecrecover.
 #
@@ -83,12 +84,12 @@ fi
 command -v jq   >/dev/null || die "jq not found on PATH"
 command -v cast >/dev/null || die "cast (foundry) not found on PATH"
 
-TEE_MACHINE_REGISTRY="$(jq -r '.TeeMachineRegistry // empty' "$ADDRESSES_FILE")"
-[[ -n "$TEE_MACHINE_REGISTRY" ]] || die "TeeMachineRegistry not found in $ADDRESSES_FILE"
+FLARE_TEE_MANAGER="$(jq -r '.[] | select(.name == "FlareTeeManager").address // empty' "$ADDRESSES_FILE")"
+[[ -n "$FLARE_TEE_MANAGER" ]] || die "FlareTeeManager not found in $ADDRESSES_FILE"
 
 log "Chain URL:           $CHAIN_URL"
 log "InstructionSender:   $INSTRUCTION_SENDER"
-log "TeeMachineRegistry:  $TEE_MACHINE_REGISTRY"
+log "FlareTeeManager:     $FLARE_TEE_MANAGER"
 log "Extension ID:        $EXTENSION_ID"
 
 # --- Idempotency: skip if already set ---
@@ -102,8 +103,8 @@ fi
 # --- Look up TEE signing address from TeeMachineRegistry ---
 # getActiveTeeMachines returns (address[] teeIds, string[] urls). We take the
 # first entry — orderbook uses single-TEE signing (cosignersThreshold=0).
-log "Querying TeeMachineRegistry.getActiveTeeMachines($EXTENSION_ID)..."
-raw="$(cast call "$TEE_MACHINE_REGISTRY" \
+log "Querying FlareTeeManager.getActiveTeeMachines($EXTENSION_ID)..."
+raw="$(cast call "$FLARE_TEE_MANAGER" \
     "getActiveTeeMachines(uint256)(address[],string[])" \
     "$EXTENSION_ID" --rpc-url "$CHAIN_URL")" || die "getActiveTeeMachines call reverted"
 

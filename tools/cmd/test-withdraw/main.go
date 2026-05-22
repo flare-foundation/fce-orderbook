@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"extension-scaffold/tools/pkg/configs"
@@ -69,7 +70,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	_ = godotenv.Load("../config/test-tokens.env")
+	_ = godotenv.Load(filepath.Join(configs.NetworkConfigDir(*af), "test-tokens.env"))
 	quoteTokenStr := os.Getenv("QUOTE_TOKEN")
 	if quoteTokenStr == "" {
 		logger.Errorf("QUOTE_TOKEN not set. Run test-setup first.")

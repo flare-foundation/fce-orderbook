@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"extension-scaffold/tools/pkg/configs"
@@ -44,8 +45,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load test-tokens.env for QUOTE_TOKEN and BASE_TOKEN.
-	_ = godotenv.Load("../config/test-tokens.env")
+	// Load test-tokens.env for QUOTE_TOKEN and BASE_TOKEN (per-chain).
+	_ = godotenv.Load(filepath.Join(configs.NetworkConfigDir(*af), "test-tokens.env"))
 	quoteTokenStr := os.Getenv("QUOTE_TOKEN")
 	baseTokenStr := os.Getenv("BASE_TOKEN")
 	if quoteTokenStr == "" || baseTokenStr == "" {

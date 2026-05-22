@@ -61,11 +61,14 @@ WORKDIR /app
 # re-apply chmod/chown on each COPY so metadata is pinned here and does not depend on whatever the builder stage left behind
 COPY --chmod=644 --chown=65532:65532 --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --chmod=755 --chown=65532:65532 --from=builder /app/extension-tee /app/extension-tee
-COPY --chmod=755 --chown=65532:65532 --from=builder /app/types-server /app/types-server
-COPY --chmod=644 --chown=65532:65532 extension-examples/orderbook/config/pairs.json /app/config/pairs.json
+ARG NETWORK=coston
+COPY --chmod=644 --chown=65532:65532 extension-examples/orderbook/config/${NETWORK}/pairs.json /app/config/pairs.json
 
-# production mode
-ENV MODE=1 CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
+# MODE: 0 = production (real TEE attestation), 1 = local (no attestation).
+# Defaults to local; pass --build-arg MODE=0 for a prod image. Runtime override
+# is allowed via the launch-policy label below.
+ARG MODE=0
+ENV MODE=$MODE CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
 
 # match tee-node: run as root (USER 0:0) — the TEE workload itself is the isolation boundary
 USER 0:0

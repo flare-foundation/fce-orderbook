@@ -28,10 +28,14 @@ func TestCheckTx_SuccessfulTx(t *testing.T) {
 		t.Fatalf("transactor: %v", err)
 	}
 
+	deployer := crypto.PubkeyToAddress(testSupport.Prv.PublicKey)
+	admins := []common.Address{deployer}
+
 	_, tx, _, err := orderbook.DeployOrderbookInstructionSender(
 		opts, testSupport.ChainClient,
 		testSupport.Addresses.FlareTeeManager,
 		testSupport.Addresses.FlareTeeManager,
+		admins,
 	)
 	if err != nil {
 		t.Fatalf("deploy failed: %v", err)

@@ -125,6 +125,17 @@ if [[ "$USE_LOCAL" == "false" ]]; then
             ;;
     esac
 
+    # Reproducible builds: clamp mtimes to the commit timestamp.
+    # docker-compose.yaml forwards this to the Dockerfile as a build arg.
+    if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+        if SOURCE_DATE_EPOCH="$(git -C "$PROJECT_DIR" log -1 --format=%ct 2>/dev/null)" && [[ -n "$SOURCE_DATE_EPOCH" ]]; then
+            export SOURCE_DATE_EPOCH
+        else
+            export SOURCE_DATE_EPOCH="$(date +%s)"
+            warn "Not a git repo or no commits — using current time as SOURCE_DATE_EPOCH (build not reproducible)"
+        fi
+    fi
+
     docker compose "${COMPOSE_FILES[@]}" up -d --build || die "docker compose up failed"
 
     # Wait for proxy to be ready
