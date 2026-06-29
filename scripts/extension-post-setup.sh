@@ -43,6 +43,12 @@ else
     die "config/extension.env not found — run pre-build.sh first"
 fi
 
+# cast/forge read the CHAIN env var as their --chain flag. The project exports
+# CHAIN with its own values (local/coston/coston2), which aren't valid foundry
+# chains, so keep it out of cast's environment. This script targets the chain via
+# --rpc-url "$CHAIN_URL" instead.
+unset CHAIN
+
 CHAIN_URL="${CHAIN_URL:-http://127.0.0.1:8545}"
 INSTRUCTION_SENDER="${INSTRUCTION_SENDER:-}"
 EXTENSION_ID="${EXTENSION_ID:-}"
