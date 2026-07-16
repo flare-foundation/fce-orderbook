@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { parseUnits, formatUnits, type Address } from 'viem';
-import { useDeposit } from '../hooks/useDeposit';
-import { useWithdraw } from '../hooks/useWithdraw';
+import { useDeposit, depositSteps } from '../hooks/useDeposit';
+import { useWithdraw, WITHDRAW_STEPS } from '../hooks/useWithdraw';
 import { useFaucet } from '../hooks/useFaucet';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { useMyState } from '../hooks/useMyState';
 import { useToast } from './ui/Toast';
+import { useTray } from './ui/ActionTray';
 import { PAIRS } from '../config/generated';
 import { INSTRUCTION_SENDER } from '../config/addresses';
 
@@ -60,6 +61,15 @@ function formatAddress(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`.toLowerCase();
 }
 
+/**
+ * Wallet/viem errors run to several paragraphs. Tray step details get one
+ * short line — the first sentence is where the useful part lives.
+ */
+function shortReason(message: string): string {
+  const first = message.split('\n')[0].trim();
+  return first.length > 56 ? `${first.slice(0, 55)}…` : first;
+}
+
 interface WalletModalProps {
   open: boolean;
   onClose: () => void;
@@ -74,6 +84,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const { toast } = useToast();
+  const tray = useTray();
   const deposit = useDeposit();
   const withdraw = useWithdraw();
   const faucet = useFaucet();
@@ -150,28 +161,66 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
       toast('Connect wallet first', 'error');
       return;
     }
-    const allTokens = getTokens();
-    let minted = 0;
-    for (const t of allTokens) {
+
+    // Resolve the mintable set up front so the tray's steps line up 1:1 with
+    // the mints we actually attempt.
+    const mintable: { symbol: string; addr: Address; raw: bigint; human: string }[] = [];
+    for (const t of getTokens()) {
       const info = tokenInfo[t.address.toLowerCase()];
       if (info?.decimals === undefined) continue;
       const human = faucetAmountFor(t.symbol);
-      let raw: bigint;
       try {
-        raw = parseUnits(human, info.decimals);
+        mintable.push({
+          symbol: t.symbol,
+          addr: t.address,
+          raw: parseUnits(human, info.decimals),
+          human,
+        });
       } catch {
-        continue;
-      }
-      try {
-        await faucet.mutateAsync({ token: t.address, to: address, amount: raw });
-        addHistory('MINT', t.symbol, human);
-        minted++;
-      } catch {
-        // Continue to next token
+        // Unparseable amount for this token — skip it.
       }
     }
-    if (minted > 0) toast(`Minted ${minted} test tokens`, 'success');
-    else toast('Faucet failed', 'error');
+    if (!mintable.length) {
+      toast('Token decimals not loaded yet — try again in a moment', 'error');
+      return;
+    }
+
+    const job = tray.start({
+      title: 'Mint test tokens',
+      steps: mintable.map(m => `Mint ${m.symbol}`),
+    });
+
+    const failed: string[] = [];
+    for (const [i, m] of mintable.entries()) {
+      if (i > 0) job.advance();
+      try {
+        await faucet.mutateAsync({
+          token: m.addr,
+          to: address,
+          amount: m.raw,
+          report: job,
+        });
+        addHistory('MINT', m.symbol, m.human);
+      } catch (e) {
+        // One token failing shouldn't abort the rest — mark it and carry on.
+        failed.push(m.symbol);
+        job.failStep(e instanceof Error ? shortReason(e.message) : 'failed');
+      }
+    }
+
+    const minted = mintable.length - failed.length;
+    if (minted === 0) {
+      job.fail({ message: `All ${mintable.length} mints failed.` });
+      toast('Faucet failed', 'error');
+      return;
+    }
+    job.finish({ summary: { minted: `${minted}/${mintable.length}` } });
+    toast(
+      failed.length
+        ? `Minted ${minted}/${mintable.length} — failed: ${failed.join(', ')}`
+        : `Minted ${minted} test tokens`,
+      failed.length ? 'info' : 'success',
+    );
   }
 
   // ---- DEPOSIT ----
@@ -193,17 +242,22 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
       toast('Amount must be greater than 0', 'error');
       return;
     }
+    const job = tray.start({
+      title: `Deposit ${amount} ${selectedToken.symbol}`,
+      steps: depositSteps(selectedToken.symbol),
+    });
     try {
-      await deposit.mutateAsync({
+      const tx = await deposit.mutateAsync({
         instructionSender: INSTRUCTION_SENDER,
         token: selectedToken.address,
         amount: rawAmount,
+        report: job,
       });
+      job.finish({ summary: { tx: formatAddress(tx) } });
       addHistory('DEPOSIT', selectedToken.symbol, amount);
-      toast('Deposit successful', 'success');
       setAmount('');
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Deposit failed', 'error');
+      job.fail({ message: e instanceof Error ? e.message : 'Deposit failed' });
     }
   }
 
@@ -226,18 +280,37 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
       toast('Amount must be greater than 0', 'error');
       return;
     }
+    const job = tray.start({
+      title: `Withdraw ${amount} ${selectedToken.symbol}`,
+      steps: WITHDRAW_STEPS,
+    });
     try {
-      await withdraw.mutateAsync({
+      const tx = await withdraw.mutateAsync({
         instructionSender: INSTRUCTION_SENDER,
         token: selectedToken.address,
         amount: rawAmount,
         to: withdrawTo as Address,
+        report: job,
       });
+      job.finish({ summary: { tx: formatAddress(tx) } });
       addHistory('WITHDRAW', selectedToken.symbol, amount);
-      toast('Withdrawal complete', 'success');
       setAmount('');
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Withdrawal failed', 'error');
+      job.fail({ message: e instanceof Error ? e.message : 'Withdrawal failed' });
+    }
+  }
+
+  /** Re-run only step 3 using the signature cached when it failed. */
+  async function handleRetryExecute() {
+    const job = tray.start({
+      title: 'Retry withdrawal execution',
+      steps: ['Execute on-chain'],
+    });
+    try {
+      const tx = await withdraw.retryExecute(INSTRUCTION_SENDER, job);
+      job.finish({ summary: { tx: formatAddress(tx) } });
+    } catch (e) {
+      job.fail({ message: e instanceof Error ? e.message : 'Execute failed' });
     }
   }
 
@@ -509,11 +582,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                   />
                 </div>
 
-                {withdraw.step && (
-                  <div className="wallet-step">▸ {withdraw.step}</div>
-                )}
-
-                {withdraw.cachedSignature && (
+                {withdraw.cachedSignature && !withdraw.isPending && (
                   <div
                     style={{
                       border: '1px solid var(--line-2)',
@@ -532,12 +601,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                     >
                       STEP 3 FAILED — SIGNATURE CACHED
                     </div>
-                    <button
-                      className="wallet-submit"
-                      onClick={() =>
-                        withdraw.retryExecute(INSTRUCTION_SENDER)
-                      }
-                    >
+                    <button className="wallet-submit" onClick={handleRetryExecute}>
                       RETRY EXECUTE
                     </button>
                   </div>

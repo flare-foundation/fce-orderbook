@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatUnits } from 'viem';
-import { usePlaceOrder } from '../hooks/usePlaceOrder';
+import { usePlaceOrder, PLACE_ORDER_STEPS } from '../hooks/usePlaceOrder';
 import { useMyState } from '../hooks/useMyState';
 import { useWalletBalances } from '../hooks/useWalletBalances';
-import { useToast } from './ui/Toast';
+import { useTray } from './ui/ActionTray';
 import { PAIRS } from '../config/generated';
 import type { PlaceOrderReq } from '../lib/orderbook';
 
@@ -19,7 +19,7 @@ export function OrderForm({ pair, prefillPrice }: OrderFormProps) {
   const [orderType, setOrderType] = useState<'limit' | 'market'>('limit');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
-  const { toast } = useToast();
+  const tray = useTray();
   const placeOrder = usePlaceOrder();
   const { balances } = useMyState();
   const { tokenInfo } = useWalletBalances();
@@ -70,22 +70,30 @@ export function OrderForm({ pair, prefillPrice }: OrderFormProps) {
 
   async function submit() {
     if (!canSubmit) return;
+    const req: Omit<PlaceOrderReq, 'sender'> = {
+      pair,
+      side,
+      type: orderType,
+      price: orderType === 'limit' ? priceNum : 0,
+      quantity: qtyNum,
+    };
+    const job = tray.start({
+      title: `${side.toUpperCase()} ${qtyNum} ${base}${
+        orderType === 'limit' ? ` @ ${priceNum}` : ' at market'
+      }`,
+      steps: PLACE_ORDER_STEPS,
+    });
     try {
-      const req: Omit<PlaceOrderReq, 'sender'> = {
-        pair,
-        side,
-        type: orderType,
-        price: orderType === 'limit' ? priceNum : 0,
-        quantity: qtyNum,
-      };
-      const result = await placeOrder.mutateAsync(req);
-      toast(
-        `Order ${result.status}: ${result.matches?.length ?? 0} fills`,
-        result.status === 'filled' ? 'success' : 'info',
-      );
+      const result = await placeOrder.mutateAsync({ ...req, report: job });
+      job.finish({
+        summary: {
+          status: result.status,
+          fills: String(result.matches?.length ?? 0),
+        },
+      });
       setQuantity('');
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Order failed', 'error');
+      job.fail({ message: e instanceof Error ? e.message : 'Order failed' });
     }
   }
 

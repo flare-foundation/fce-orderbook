@@ -4,14 +4,20 @@ import { placeOrder, type PlaceOrderReq, type PlaceOrderResp } from "../lib/orde
 import { useWalletBalances } from "./useWalletBalances";
 import { scalePrice } from "../lib/price";
 import { PAIRS } from "../config/generated";
+import type { StepReporter } from "../components/ui/ActionTray";
+
+/** Tray step labels, in the order this hook advances through them. */
+export const PLACE_ORDER_STEPS = ["Submit to TEE", "TEE execution"];
+
+type PlaceOrderArgs = Omit<PlaceOrderReq, "sender"> & { report?: StepReporter };
 
 export function usePlaceOrder() {
   const { address } = useAccount();
   const queryClient = useQueryClient();
   const { tokenInfo } = useWalletBalances();
 
-  return useMutation<PlaceOrderResp, Error, Omit<PlaceOrderReq, "sender">>({
-    mutationFn: (req) => {
+  return useMutation<PlaceOrderResp, Error, PlaceOrderArgs>({
+    mutationFn: ({ report, ...req }) => {
       const pairConfig = PAIRS.find((p) => p.name === req.pair);
       if (!pairConfig) throw new Error(`Unknown pair: ${req.pair}`);
 
@@ -30,12 +36,18 @@ export function usePlaceOrder() {
       const quoteScale = Math.pow(10, quoteDecimals);
       const scaledPrice = scalePrice((req.price * quoteScale) / baseScale);
 
-      return placeOrder({
-        ...req,
-        sender: address!.toLowerCase(),
-        quantity: scaledQuantity,
-        price: scaledPrice,
-      });
+      return placeOrder(
+        {
+          ...req,
+          sender: address!.toLowerCase(),
+          quantity: scaledQuantity,
+          price: scaledPrice,
+        },
+        {
+          onSubmitted: () => report?.advance(),
+          onPoll: (n, max) => report?.detail(`attempt ${n}/${max}`),
+        },
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["myState"] });
