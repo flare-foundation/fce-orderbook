@@ -175,10 +175,12 @@ step 3 "Set extension ID on InstructionSender"
 log "InstructionSender: $INSTRUCTION_SENDER"
 
 # setExtensionId() is idempotent — reverts with "Extension ID already set." if already done.
-# env -u CHAIN: cast reads CHAIN as --chain; the project's CHAIN values aren't valid
-# foundry chains, so strip it for this call (we target via --rpc-url instead).
-if env -u CHAIN cast send "$INSTRUCTION_SENDER" "setExtensionId()" \
-    --rpc-url "$CHAIN_URL" --private-key "$DEPLOYMENT_PRIVATE_KEY" >/dev/null 2>&1; then
+# Foundry auto-loads .env and reads CHAIN as its --chain flag; the project's CHAIN=coston
+# isn't a valid foundry chain, and `env -u CHAIN` does NOT help (cast re-reads .env). Pin
+# --chain to the RPC's numeric chain id — a command-line flag overrides the .env value.
+FCHAIN="$(cast chain-id --rpc-url "$CHAIN_URL" 2>/dev/null)"
+if cast send "$INSTRUCTION_SENDER" "setExtensionId()" \
+    --rpc-url "$CHAIN_URL" ${FCHAIN:+--chain "$FCHAIN"} --private-key "$DEPLOYMENT_PRIVATE_KEY" >/dev/null 2>&1; then
     log "Extension ID set on InstructionSender"
 else
     log "Extension ID already set on InstructionSender (or call failed — continuing)"

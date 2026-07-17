@@ -98,10 +98,16 @@ log "InstructionSender:   $INSTRUCTION_SENDER"
 log "FlareTeeManager:     $FLARE_TEE_MANAGER"
 log "Extension ID:        $EXTENSION_ID"
 
+# Foundry auto-loads .env and treats CHAIN as its --chain flag. The project's
+# CHAIN=coston isn't a valid foundry chain name, and the `unset CHAIN` above does
+# NOT help — cast re-reads .env internally. Pin --chain to the RPC's numeric chain
+# id; a command-line flag overrides the .env value. `cast chain-id` takes no --chain.
+FCHAIN="$(cast chain-id --rpc-url "$CHAIN_URL")" || die "could not read chain id from $CHAIN_URL"
+
 # --- Idempotency: skip if already set ---
-already_set="$(cast call "$INSTRUCTION_SENDER" "teeAddressSet()(bool)" --rpc-url "$CHAIN_URL" 2>/dev/null || echo "")"
+already_set="$(cast call "$INSTRUCTION_SENDER" "teeAddressSet()(bool)" --rpc-url "$CHAIN_URL" --chain "$FCHAIN" 2>/dev/null || echo "")"
 if [[ "$already_set" == "true" ]]; then
-    current="$(cast call "$INSTRUCTION_SENDER" "teeAddress()(address)" --rpc-url "$CHAIN_URL")"
+    current="$(cast call "$INSTRUCTION_SENDER" "teeAddress()(address)" --rpc-url "$CHAIN_URL" --chain "$FCHAIN")"
     log "TEE address already set on InstructionSender ($current) — nothing to do"
     exit 0
 fi
@@ -112,7 +118,7 @@ fi
 log "Querying FlareTeeManager.getActiveTeeMachines($EXTENSION_ID)..."
 raw="$(cast call "$FLARE_TEE_MANAGER" \
     "getActiveTeeMachines(uint256)(address[],string[])" \
-    "$EXTENSION_ID" --rpc-url "$CHAIN_URL")" || die "getActiveTeeMachines call reverted"
+    "$EXTENSION_ID" --rpc-url "$CHAIN_URL" --chain "$FCHAIN")" || die "getActiveTeeMachines call reverted"
 
 # First line of output is the address array: "[0xabc..., 0xdef...]" or "[]"
 addrs_line="$(echo "$raw" | head -n1)"
@@ -135,7 +141,7 @@ log "TEE signing address: $tee_addr"
 # --- Set on InstructionSender ---
 log "Calling setTeeAddress($tee_addr) on $INSTRUCTION_SENDER..."
 cast send "$INSTRUCTION_SENDER" "setTeeAddress(address)" "$tee_addr" \
-    --rpc-url "$CHAIN_URL" --private-key "$DEPLOYMENT_PRIVATE_KEY" >/dev/null \
+    --rpc-url "$CHAIN_URL" --chain "$FCHAIN" --private-key "$DEPLOYMENT_PRIVATE_KEY" >/dev/null \
     || die "setTeeAddress failed"
 
 log "TEE address set on InstructionSender — executeWithdrawal() is now enabled"
