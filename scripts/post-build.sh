@@ -143,12 +143,24 @@ else
         || die "Allow TEE version failed (set SKIP_ALLOW_VERSION=true to skip if already registered)"
 fi
 
+# --- Step 2: Set TEE governance on extension ---
+# Registers the governance signer set + threshold the TEE node signs with.
+# Reads GOVERNANCE_SIGNERS / GOVERNANCE_THRESHOLD (default: deployer, threshold 1)
+# and MUST match the same vars passed to the TEE node container, or register-tee
+# fails with InvalidGovernanceHash.
+step 2 "Set TEE governance"
+go run ./cmd/set-governance \
+    -a "$ADDRESSES_FILE" \
+    -c "$CHAIN_URL" \
+    -p "$EXT_PROXY_URL" \
+    || die "Set TEE governance failed"
+
 # Export SIMULATED_TEE for register-tee (controls attestation mode)
 export SIMULATED_TEE="${SIMULATED_TEE:-true}"
 log "Simulated TEE: $SIMULATED_TEE"
 
-# --- Step 2: Register TEE on-chain ---
-step 2 "Register TEE machine"
+# --- Step 3: Register TEE on-chain ---
+step 3 "Register TEE machine"
 go run ./cmd/register-tee \
     -a "$ADDRESSES_FILE" \
     -c "$CHAIN_URL" \
@@ -163,8 +175,12 @@ step 3 "Set extension ID on InstructionSender"
 log "InstructionSender: $INSTRUCTION_SENDER"
 
 # setExtensionId() is idempotent — reverts with "Extension ID already set." if already done.
+# Foundry auto-loads .env and reads CHAIN as its --chain flag; the project's CHAIN=coston
+# isn't a valid foundry chain, and `env -u CHAIN` does NOT help (cast re-reads .env). Pin
+# --chain to the RPC's numeric chain id — a command-line flag overrides the .env value.
+FCHAIN="$(cast chain-id --rpc-url "$CHAIN_URL" 2>/dev/null)"
 if cast send "$INSTRUCTION_SENDER" "setExtensionId()" \
-    --rpc-url "$CHAIN_URL" --private-key "$DEPLOYMENT_PRIVATE_KEY" >/dev/null 2>&1; then
+    --rpc-url "$CHAIN_URL" ${FCHAIN:+--chain "$FCHAIN"} --private-key "$DEPLOYMENT_PRIVATE_KEY" >/dev/null 2>&1; then
     log "Extension ID set on InstructionSender"
 else
     log "Extension ID already set on InstructionSender (or call failed — continuing)"

@@ -3,7 +3,7 @@
  * Mirrors the request/response types in internal/extension and pkg/types.
  */
 
-import { sendDirectAndPoll } from "./teeClient";
+import { sendDirectAndPoll, type DirectProgress } from "./teeClient";
 
 // --- Request types ---
 
@@ -125,12 +125,18 @@ export interface CandlesResp {
 
 // --- API wrappers ---
 
-export function placeOrder(req: PlaceOrderReq): Promise<PlaceOrderResp> {
-  return sendDirectAndPoll<PlaceOrderResp>("PLACE_ORDER", req);
+export function placeOrder(
+  req: PlaceOrderReq,
+  progress?: DirectProgress
+): Promise<PlaceOrderResp> {
+  return sendDirectAndPoll<PlaceOrderResp>("PLACE_ORDER", req, progress);
 }
 
-export function cancelOrder(req: CancelOrderReq): Promise<CancelOrderResp> {
-  return sendDirectAndPoll<CancelOrderResp>("CANCEL_ORDER", req);
+export function cancelOrder(
+  req: CancelOrderReq,
+  progress?: DirectProgress
+): Promise<CancelOrderResp> {
+  return sendDirectAndPoll<CancelOrderResp>("CANCEL_ORDER", req, progress);
 }
 
 export function getMyState(sender: string): Promise<GetMyStateResp> {

@@ -1250,3 +1250,173 @@
   border-color: var(--accent);
   background: var(--bg-2);
 }
+
+/* ── Action tray ─────────────────────────────────────────────── */
+/* Sits above the wallet modal (z 200) so deposit progress stays visible,
+   below toasts (z 1000). */
+.tray {
+  position: fixed;
+  bottom: 28px;
+  right: 12px;
+  width: 340px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.tray-card {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--accent);
+  padding: 10px 12px;
+  pointer-events: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  animation: fadeIn 160ms ease-out both;
+}
+.tray-card.done { border-left-color: var(--bid); }
+.tray-card.partial { border-left-color: var(--warn); }
+.tray-card.failed { border-left-color: var(--ask); }
+
+.tray-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.tray-mark {
+  color: var(--accent);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.tray-card.running .tray-mark { animation: blink 1.2s steps(1) infinite; }
+.tray-card.done .tray-mark { color: var(--bid); }
+.tray-card.partial .tray-mark { color: var(--warn); }
+.tray-card.failed .tray-mark { color: var(--ask); }
+.tray-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-elapsed {
+  font-size: 9px;
+  color: var(--fg-mute);
+  letter-spacing: 0.08em;
+}
+.tray-x {
+  color: var(--fg-mute);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.tray-x:hover { color: var(--fg); }
+
+.tray-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tray-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-mute);
+}
+.tray-step .ind {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border: 1px solid var(--line-2);
+  background: transparent;
+}
+.tray-step .lbl {
+  flex: 1;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-step .det {
+  color: var(--fg-mute);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tray-step .t {
+  font-size: 9px;
+  color: var(--fg-mute);
+  flex-shrink: 0;
+}
+
+.tray-step.active {
+  color: var(--fg);
+}
+.tray-step.active .ind {
+  border-color: var(--accent);
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.tray-step.active .det { color: var(--accent); }
+
+.tray-step.done { color: var(--fg-dim); }
+.tray-step.done .ind {
+  border-color: var(--bid);
+  background: var(--bid);
+}
+
+.tray-step.failed { color: var(--ask); }
+.tray-step.failed .ind {
+  border-color: var(--ask);
+  background: var(--ask);
+}
+
+.tray-step.cancelled { color: var(--fg-mute); opacity: 0.5; }
+.tray-step.cancelled .lbl { text-decoration: line-through; }
+
+.tray-error {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ask);
+  word-break: break-word;
+  /* Chain reverts can be paragraphs long — cap it rather than let one card
+     swallow the viewport. */
+  max-height: 88px;
+  overflow-y: auto;
+}
+
+.tray-summary {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tray-summary .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+}
+.tray-summary .k {
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.tray-summary .v {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

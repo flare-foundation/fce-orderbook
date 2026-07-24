@@ -103,6 +103,8 @@ if [[ "$USE_LOCAL" == "false" ]]; then
             if [[ ! -d "$TEE_PROXY_DIR" ]]; then
                 die "Image local/tee-proxy not found and tee-proxy repo not present at $TEE_PROXY_DIR.\n  Either set REGISTRY in .env to pull from a remote registry, or clone the tee-proxy repo into $TEE_ROOT/."
             fi
+            # tee-proxy builds self-contained: tee-node is a normal module dependency
+            # (fetched via `go mod download`), so the build context is tee-proxy/ itself.
             log "Building local/tee-proxy image from $TEE_PROXY_DIR..."
             docker build -f "$TEE_PROXY_DIR/Dockerfile" -t local/tee-proxy "$TEE_PROXY_DIR" || die "Failed to build tee-proxy image"
             log "local/tee-proxy image built successfully"

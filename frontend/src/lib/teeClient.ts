@@ -96,6 +96,9 @@ export async function postDirect(
  */
 export type SubmissionTag = "submit" | "threshold" | "end";
 
+/** Called before each poll attempt so callers can show progress. */
+export type PollProgress = (attempt: number, maxAttempts: number) => void;
+
 /**
  * Poll for an action result. Retries up to `maxAttempts` with `intervalMs` delay.
  * `submissionTag` defaults to "submit" (direct instructions); pass "threshold"
@@ -105,11 +108,13 @@ export async function pollResult(
   actionId: string,
   maxAttempts = 15,
   intervalMs = 2000,
-  submissionTag: SubmissionTag = "submit"
+  submissionTag: SubmissionTag = "submit",
+  onProgress?: PollProgress
 ): Promise<ActionResult> {
   const url = `${baseUrl()}/action/result/${actionId}?submissionTag=${submissionTag}`;
 
   for (let i = 0; i < maxAttempts; i++) {
+    onProgress?.(i + 1, maxAttempts);
     try {
       const res = await fetch(url);
       if (res.ok) {
@@ -135,16 +140,24 @@ export function decodeResultData<T>(data: string): T {
   return JSON.parse(s) as T;
 }
 
+export interface DirectProgress {
+  /** The proxy accepted the instruction; polling for execution starts now. */
+  onSubmitted?: (actionId: string) => void;
+  onPoll?: PollProgress;
+}
+
 /**
  * Send a direct instruction and poll for the result.
  * Returns the parsed result data, or throws on failure.
  */
 export async function sendDirectAndPoll<T>(
   opCommand: string,
-  payload: unknown
+  payload: unknown,
+  progress?: DirectProgress
 ): Promise<T> {
   const actionId = await postDirect(opCommand, payload);
-  const actionResult = await pollResult(actionId);
+  progress?.onSubmitted?.(actionId);
+  const actionResult = await pollResult(actionId, 15, 2000, "submit", progress?.onPoll);
 
   if (actionResult.result.status === 0) {
     throw new Error(`Instruction failed: ${actionResult.result.log}`);

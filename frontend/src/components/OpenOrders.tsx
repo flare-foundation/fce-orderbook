@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { formatUnits } from 'viem';
 import { useMyState } from '../hooks/useMyState';
-import { useCancelOrder } from '../hooks/useCancelOrder';
+import { useCancelOrder, CANCEL_ORDER_STEPS } from '../hooks/useCancelOrder';
 import { useWalletBalances } from '../hooks/useWalletBalances';
-import { useToast } from './ui/Toast';
+import { useTray } from './ui/ActionTray';
 import { PAIRS } from '../config/generated';
 import { formatPriceAdaptive } from '../lib/price';
 
@@ -10,7 +11,10 @@ export function OpenOrders() {
   const { openOrders } = useMyState();
   const cancelOrder = useCancelOrder();
   const { tokenInfo } = useWalletBalances();
-  const { toast } = useToast();
+  const tray = useTray();
+  // The mutation's own isPending is shared by every row, so track cancelling
+  // orders individually — otherwise one cancel disables all the buttons.
+  const [cancelling, setCancelling] = useState<Set<string>>(new Set());
 
   function getBaseDecimals(pair: string): number | undefined {
     const pairConfig = PAIRS.find(p => p.name === pair);
@@ -33,12 +37,28 @@ export function OpenOrders() {
     return d.toLocaleTimeString('en-GB', { hour12: false });
   }
 
+  function setCancellingFor(orderId: string, active: boolean) {
+    setCancelling(prev => {
+      const next = new Set(prev);
+      if (active) next.add(orderId);
+      else next.delete(orderId);
+      return next;
+    });
+  }
+
   async function handleCancel(orderId: string) {
+    const job = tray.start({
+      title: `Cancel order ${orderId.slice(0, 8)}`,
+      steps: CANCEL_ORDER_STEPS,
+    });
+    setCancellingFor(orderId, true);
     try {
-      await cancelOrder.mutateAsync({ orderId });
-      toast('Order cancelled', 'success');
+      const result = await cancelOrder.mutateAsync({ orderId, report: job });
+      job.finish({ summary: { remaining: String(result.remaining) } });
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Cancel failed', 'error');
+      job.fail({ message: e instanceof Error ? e.message : 'Cancel failed' });
+    } finally {
+      setCancellingFor(orderId, false);
     }
   }
 
@@ -87,10 +107,10 @@ export function OpenOrders() {
               <button
                 className="hdr-chip"
                 onClick={() => handleCancel(o.id)}
-                disabled={cancelOrder.isPending}
+                disabled={cancelling.has(o.id)}
                 style={{ color: 'var(--ask)', borderStyle: 'solid', borderColor: 'var(--line-2)' }}
               >
-                {cancelOrder.isPending ? '...' : 'CANCEL'}
+                {cancelling.has(o.id) ? '...' : 'CANCEL'}
               </button>
             </td>
           </tr>
