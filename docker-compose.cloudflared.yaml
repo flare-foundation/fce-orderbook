@@ -1,0 +1,22 @@
+# cloudflared replacement for the ngrok tunnel on the external ext-proxy port.
+#
+#   docker compose -f docker-compose.cloudflared.yaml up -d
+#   docker compose -f docker-compose.cloudflared.yaml logs cloudflared \
+#     | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1
+#
+# Put that URL in EXT_PROXY_URL (same slot the ngrok URL used to go in).
+# Works standalone or merged as an override: -f docker-compose.yaml -f docker-compose.cloudflared.yaml
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # ponytail: quick tunnel — no Cloudflare account, random URL per start, same
+    # as ngrok free. For a stable hostname make a named tunnel and swap this for
+    # `tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}`.
+    # ponytail: goes through the published host port, so this file has no
+    # network/ordering dependency on the main stack. Docker ext-proxy = 6674,
+    # local Go binary = 6664.
+    command: tunnel --no-autoupdate --url ${TUNNEL_TARGET:-http://host.docker.internal:6674}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # ponytail: no restart policy on purpose — a restart mints a NEW URL and
+    # silently strands EXT_PROXY_URL. Better it stays down and you notice.
