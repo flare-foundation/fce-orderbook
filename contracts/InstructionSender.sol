@@ -139,6 +139,26 @@ contract OrderbookInstructionSender {
         _sendInstruction(OP_COMMAND_DEPOSIT, message);
     }
 
+    /// @notice Deposit ERC20 tokens on behalf of `user` — the relay entry point for
+    ///         gasless accounts (XRPL-keyed Flare Smart Account PersonalAccounts, which
+    ///         cannot submit Flare transactions themselves). Permissionless and safe by
+    ///         construction: value can only flow FROM the user's own approval INTO this
+    ///         vault, credited back TO that same user. The worst a caller can do is spend
+    ///         their own gas.
+    /// @param user The account whose tokens are pulled and whose TEE balance is credited.
+    /// @param token The ERC20 token address.
+    /// @param amount The amount to deposit (in smallest units).
+    function depositFor(address user, address token, uint256 amount) external payable {
+        require(!kycEnabled || allowed[user], "not allowed to deposit");
+        require(user != address(0), "zero user");
+        require(amount > 0, "zero amount");
+
+        require(IERC20(token).transferFrom(user, address(this), amount), "transferFrom failed");
+
+        bytes memory message = abi.encode(user, token, amount);
+        _sendInstruction(OP_COMMAND_DEPOSIT, message);
+    }
+
     // --- Withdraw ---
 
     /// @notice Request a withdrawal. The TEE will return signed authorization parameters.
