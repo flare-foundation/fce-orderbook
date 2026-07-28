@@ -1,0 +1,7 @@
+.actionIcon{
+    cursor: pointer;
+    display: flex;
+    align-content: center;
+    flex-wrap: wrap;
+
+}

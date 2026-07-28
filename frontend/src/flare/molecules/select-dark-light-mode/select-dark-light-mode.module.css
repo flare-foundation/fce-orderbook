@@ -1,0 +1,35 @@
+.icon {
+  color: var(--mantine-color-neutrals-fills-medium) !important;
+
+  &:hover {
+    color: var(--mantine-color-neutrals-fills-dark) !important;
+  }
+}
+
+.root {
+  background-color: transparent;
+  border: 1px solid var(--mantine-color-semantic-button-wallet-connect-outlined-border-default);
+  border-radius: 32px;
+  padding: 4px;
+  width: fit-content;
+}
+
+.indicator {
+  background-color: transparent;
+}
+
+.label {
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  color: var(--mantine-color-neutrals-fills-medium) !important;
+
+  &:where([data-active]) {
+    background-color: transparent;
+    border: 1px solid var(--mantine-color-semantic-dropdown-primary-outlined-border-hover);
+    border-radius: 32px;
+    color: var(--mantine-color-neutrals-fills-dark) !important;
+  }
+}

@@ -1,0 +1,63 @@
+.primary {
+  background-color: var(--mantine-color-semantic-button-primary-filled-bg-default);
+  color: var(--mantine-color-semantic-button-primary-filled-text-default);
+
+  &:hover {
+    background-color: var(--mantine-color-semantic-button-primary-filled-bg-hover);
+    color: var(--mantine-color-semantic-button-primary-filled-text-hover)
+  }
+
+  &[data-disabled] {
+    color: var(--mantine-color-semantic-button-primary-filled-text-disabled);
+    background-color: var(--mantine-color-semantic-button-primary-filled-bg-disabled);
+  }
+}
+
+.secondary {
+
+  background-color: var(--mantine-color-semantic-button-secondary-outlined-bg-default);
+  border:0.74px solid var(--mantine-color-semantic-button-secondary-outlined-border-default);
+  color: var(--mantine-color-semantic-button-secondary-outlined-text-default);
+
+  &:hover {
+    color: var(--mantine-color-semantic-button-secondary-outlined-text-hover);
+    background-color: var(--mantine-color-semantic-button-secondary-outlined-bg-hover);
+    border:0.74px solid var(--mantine-color-semantic-button-secondary-outlined-border-hover);
+  }
+
+  &[data-disabled] {
+    color: var(--mantine-color-semantic-button-secondary-outlined-text-disabled);
+    background-color: var(--mantine-color-semantic-button-secondary-outlined-bg-disabled);
+    border:1px solid var(--mantine-color-semantic-button-secondary-outlined-border-disabled);
+  }
+}
+
+.tertiary {
+  background-color: var(--mantine-color-semantic-button-tertiary-outlined-bg-default);
+  border:0.74px solid var(--mantine-color-semantic-button-tertiary-outlined-border-default);
+  color: var(--mantine-color-semantic-button-tertiary-outlined-text-default);
+
+  &:hover {
+    color: var(--mantine-color-semantic-button-tertiary-outlined-text-hover);
+    background-color: var(--mantine-color-semantic-button-tertiary-outlined-bg-hover);
+    border:0.74px solid var(--mantine-color-semantic-button-tertiary-outlined-border-hover);
+  }
+
+  &[data-disabled] {
+    color: var(--mantine-color-semantic-button-tertiary-outlined-text-disabled);
+    background-color: var(--mantine-color-semantic-button-tertiary-outlined-bg-disabled);
+    border:1px solid var(--mantine-color-semantic-button-tertiary-outlined-border-disabled);
+  } 
+}
+
+
+.primary,
+.secondary,
+.tertiary{
+  border-radius: var(--mantine-radius-xs);
+  padding-inline: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-xs);
+  font-weight: 500;
+  min-height: 40px;
+  letter-spacing: 0.03em;
+}

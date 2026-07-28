@@ -1,0 +1,9 @@
+export { Bifrost } from './bifrost.wallet-icon';
+export { Dcent } from './dcent.wallet-icon';
+export { Ledger } from './ledger.wallet-icon';
+export { LedgerInv } from './ledger-inv.wallet-icon';
+export { MetaMask } from './metamask.wallet-icon';
+export { Trezor } from './trezor.wallet-icon';
+export { WalletConnect } from './wallet-connect.wallet-icon';
+export { WalletConnectInv } from './wallet-connect-inv.wallet-icon';
+export { Xaman } from './xaman.wallet-icon';

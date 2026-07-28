@@ -1,0 +1,101 @@
+.inputWrapper {
+  position: relative;
+}
+
+.input {
+  border-radius: 10px; /* vendored tweak: DS ships square corners; match the app's --radius-md */
+  font-size: var(--mantine-font-size-body);
+  color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-filled);
+  line-height: 24px;
+  font-weight: 500;
+  padding-inline: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-xs);
+  height: 64px;
+  border: 1px solid var(--mantine-color-neutrals-stroke-lighter-medium);
+  background-color: transparent;
+  text-overflow: ellipsis;
+
+  &::placeholder {
+    font-size: var(--mantine-font-size-lBody);
+    color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-placeholder);
+    font-weight: 500;
+  }
+
+  /* vendored tweak: DS floats the placeholder up on focus/fill (padding-top
+     32px + hidden placeholder); we keep a plain static input like the
+     amount field — only the border darkens. */
+  &:not(:placeholder-shown),
+  &:focus {
+    border: 1px solid var(--mantine-color-neutrals-stroke-dark);
+    color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-filled);
+  }
+
+  &[data-size='lg'] {
+    &::placeholder {
+      font-size: var(--mantine-h5-font-size);
+      line-height: var(--mantine-h5-line-height);
+    }
+    height: 76px;
+  }
+
+  &[data-size='lg']{
+    font-size: var(--mantine-font-size-lBody);
+    line-height: var(--mantine-line-height-lBody);
+  }
+}
+
+.input[data-error] {
+  border: 1px solid var(--mantine-color-semantic-errors-error);
+  color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-error);
+}
+
+.input:disabled {
+  background-color: var(--mantine-color-semantic-input-fields-text-input-outlined-bg-disabled);
+  border: 1px solid var(--mantine-color-semantic-input-fields-text-input-outlined-border-disabled);
+  color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-disabled);
+
+  &::placeholder {
+    color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-disabled);
+  }
+}
+
+.placeholderFilled {
+  position: absolute;
+  top: var(--mantine-spacing-xs);
+  left: var(--mantine-spacing-md);
+  font-size: var(--mantine-font-size-sBody);
+  color: var(--mantine-color-neutrals-fills-medium);
+  pointer-events: none;
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 24px;
+}
+
+.placeholderFilled[data-disabled='true'] {
+  color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-disabled);
+}
+
+.error {
+  color: var(--mantine-color-semantic-input-fields-text-input-outlined-text-error);
+  font-size: var(--mantine-font-size-sBody);
+  font-weight: 500;
+}
+
+.rightSectionDropdown {
+  display: flex;
+  align-items: center;
+}
+
+.rigthSectionRequired {
+  bottom: var(--mantine-spacing-xs) !important;
+  top: auto !important;
+}
+
+.additionalText {
+  font-size: var(--mantine-font-size-sBody);
+  font-weight: 500;
+  color: var(--mantine-color-neutrals-fills-dark);
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}

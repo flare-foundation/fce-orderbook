@@ -1,0 +1,9 @@
+.errorBox {
+  border: 1px solid var(--mantine-color-semantic-errors-error-hover);
+  border-radius: 10px;
+  color: var(--mantine-color-states-fills-error-hover);
+  font-weight: 500;
+  font-size: var(--mantine-font-size-sBody);
+  line-height: var(--mantine-line-height-sbody);
+  padding: var(--mantine-spacing-md);
+}

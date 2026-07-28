@@ -1,0 +1,13 @@
+.input {
+  border: none;
+  border-bottom:1px solid var(--mantine-color-token-pairs-neutral-medium) ;
+  border-radius: 0px;
+  font-size: var(--mantine-font-size-body);
+
+  &::placeholder {
+    font-size: var(--mantine-font-size-body);
+    color: var(--mantine-color-neutrals-fills-medium);
+    line-height: var(--mantine-line-height-body);
+    font-weight: 500;
+  }
+}

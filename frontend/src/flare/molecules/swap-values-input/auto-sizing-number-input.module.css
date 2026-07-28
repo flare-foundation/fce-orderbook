@@ -1,0 +1,17 @@
+.input {
+    font-size: var(--mantine-h1-font-size);
+    line-height: var(--mantine-h1-line-height);
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--mantine-color-neutrals-fills-black);
+    background: none;
+    border: none;
+    outline: none;
+    padding: 0;
+    min-width: 1ch;
+    max-width: 8ch;
+
+    &::placeholder {
+        color: var(--mantine-color-neutrals-fills-lighter-medium);
+    }
+}

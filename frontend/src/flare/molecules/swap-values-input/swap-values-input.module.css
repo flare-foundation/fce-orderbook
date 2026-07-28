@@ -1,0 +1,20 @@
+.input {
+  field-sizing: content;
+
+resize: none;
+  font-size: var(--mantine-h1-font-size);
+  line-height: var(--mantine-h1-line-height);
+  color: var(--mantine-color-neutrals-fills-black);
+  font-weight: 500;
+  height: var(--mantine-h1-line-height);
+  caret-color: var(--mantine-color-neutrals-fills-black);
+  padding-inline: 0;
+
+  &::placeholder {
+    color: var(--mantine-color-neutrals-fills-lighter-medium);
+  }
+
+  &:focus {
+    color: var(--mantine-color-neutrals-fills-black);
+  }
+}

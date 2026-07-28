@@ -1,0 +1,20 @@
+.tooltip {
+  row-gap: var(--mantine-spacing-sm);
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  box-shadow: 4px 0px 15px 5px #a2a2a22b;
+  border: 1px solid var(--mantine-color-neutrals-stroke-black);
+  background-color: var(--mantine-color-neutrals-fills-white);
+  color: var(--mantine-color-neutrals-fills-medium);
+  padding: var(--mantine-spacing-md);
+  font-size: var(--mantine-font-size-sBody);
+  font-weight: 500;
+  line-height: var(--mantine-line-height-sBody);
+}
+
+.arrow {
+  border: 1px solid var(--mantine-color-neutrals-stroke-black);
+  box-shadow: 4px 0px 15px 5px #a2a2a22b;
+}
+

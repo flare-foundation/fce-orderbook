@@ -1,0 +1,15 @@
+.wrapper {
+  width: 100%;
+  background-color: var(--mantine-color-neutrals-fills-white);
+}
+
+/* vendored: `@mixin larger-than $mantine-breakpoint-sm` flattened to plain
+   @media — this app has no postcss-preset-mantine */
+@media (min-width: 48em) {
+  .wrapper {
+    border: 1px solid var(--mantine-color-neutrals-stroke-light);
+    border-radius: 10px;
+    padding: var(--mantine-spacing-xl);
+    width: 704px;
+  }
+}

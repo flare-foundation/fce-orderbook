@@ -1,0 +1,34 @@
+.inputWrapper {
+  position: relative;
+}
+
+.input {
+  border-radius: 0px;
+  font-size: var(--mantine-font-size-lBody);
+  color: var(--mantine-color-neutrals-fills-dark);
+  line-height: 24px;
+  font-weight: 500;
+  height: 64px;
+  border: 1px solid var(--mantine-color-neutrals-stroke-medium);
+  background-color: var(--mantine-color-neutrals-fills-white);
+  text-overflow: ellipsis;
+
+  &::placeholder {
+    font-size: var(--mantine-font-size-lBody);
+    color: var(--mantine-color-token-pairs-neutral-medium);
+    font-weight: 500;
+  }
+
+  &:focus {
+    border: 1px solid var(--mantine-color-neutrals-stroke-medium);
+  }
+}
+
+.input[data-active='true'] {
+  border: 1px solid var(--mantine-color-neutrals-stroke-medium);
+}
+
+.rightSectionDropdown {
+  display: flex;
+  align-items: center;
+}
