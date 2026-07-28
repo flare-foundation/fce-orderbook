@@ -181,6 +181,29 @@ cd frontend && npm install && npm run dev
 
 Open `http://localhost:5173`. The footer shows **NETWORK COSTON2** and **TEE ONLINE** when everything is connected. Use the in-app faucet to get test tokens, deposit into the vault, and place your first order.
 
+### XRPL wallets (Xaman) via Flare Smart Accounts
+
+Besides MetaMask, the exchange supports connecting an XRP Ledger wallet (Xaman).
+Flare's protocol-level Smart Accounts derive a deterministic EVM **PersonalAccount**
+from the XRPL r-address; that account is the user's identity for orders, TEE
+balances, deposits, and withdrawals. Because a PersonalAccount has no private key,
+a local **session key** is bound to it in-enclave via a Xaman-signed statement
+(`BIND_SESSION_SIG` — the TEE verifies the XRPL signature itself), and signs the
+off-chain `WITHDRAW_REQUEST` op. Gas-requiring calls are relayed by `xaman-service`
+(`depositFor`, `executeWithdrawal`, faucet `mint`); a token's one-time `approve` is
+executed *by the PersonalAccount itself* through an FSA `0xFF`-memo XRP payment.
+Mirrors the integration in `shielded-transfer`.
+
+To enable it, run the Xaman backend alongside the frontend:
+
+```bash
+cd xaman-service && cp .env.example .env   # add Xaman API creds + relayer key
+npm install && npm start                   # listens on :8787
+```
+
+The TEE side needs `CHAIN_URL` (set by the coston2 compose override) to resolve
+PersonalAccounts via the `MasterAccountController`.
+
 ---
 
 ## Testing
