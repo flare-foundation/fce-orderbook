@@ -100,7 +100,11 @@ export type SubmissionTag = "submit" | "threshold" | "end";
 export type PollProgress = (attempt: number, maxAttempts: number) => void;
 
 /**
- * Poll for an action result. Retries up to `maxAttempts` with `intervalMs` delay.
+ * Poll for an action result. Retries up to `maxAttempts`; `intervalMs` is the
+ * delay CAP. The first attempt fires immediately and usually 404s (the TEE's
+ * result lands ~50ms after submission), so retries ramp 150 → 300 → 600 →
+ * 1200ms before settling at `intervalMs` — most results resolve in a few
+ * hundred ms instead of eating a flat 2s sleep.
  * `submissionTag` defaults to "submit" (direct instructions); pass "threshold"
  * for on-chain instructions like deposits/withdrawals.
  */
@@ -123,7 +127,7 @@ export async function pollResult(
     } catch {
       // Retry on network errors.
     }
-    await new Promise((r) => setTimeout(r, intervalMs));
+    await new Promise((r) => setTimeout(r, Math.min(150 * 2 ** i, intervalMs)));
   }
 
   throw new Error(`Timed out polling for action ${actionId} (tag=${submissionTag})`);
