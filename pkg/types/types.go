@@ -2,9 +2,13 @@
 package types
 
 import (
+	"fmt"
+	"math/big"
+
 	"extension-scaffold/pkg/balance"
 	"extension-scaffold/pkg/orderbook"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -136,6 +140,94 @@ type WithdrawalRecord struct {
 	Amount    uint64         `json:"amount"`
 	Address   common.Address `json:"address"`
 	Timestamp int64          `json:"timestamp"`
+}
+
+// --- FSA (Flare Smart Accounts / Xaman) direct ops ---
+
+// BindSessionSigRequest carries a Xaman-signed XRPL SignIn blob whose memo is a
+// binding statement (domain, contract, session pubkey, nonce). The TEE verifies
+// the XRPL signature in-enclave, derives the signer's r-address, resolves its
+// deterministic PersonalAccount via the MasterAccountController, and binds the
+// statement's session key to it. Plain JSON — the statement holds no secrets
+// and the XRPL signature covers it.
+type BindSessionSigRequest struct {
+	Contract common.Address `json:"contract"`
+	XrplBlob hexutil.Bytes  `json:"xrplBlob"`
+}
+
+type BindSessionSigResponse struct {
+	User        common.Address `json:"user"`
+	XrplAddress string         `json:"xrplAddress"`
+	SessionPub  hexutil.Bytes  `json:"sessionPub"`
+	Fingerprint string         `json:"fingerprint"`
+}
+
+// GetBindingRequest is an unauthenticated public lookup: "is target bound, and
+// to which session pubkey?".
+type GetBindingRequest struct {
+	Target common.Address `json:"target"`
+}
+
+type GetBindingResponse struct {
+	Bound       bool           `json:"bound"`
+	Target      common.Address `json:"target"`
+	SessionPub  hexutil.Bytes  `json:"sessionPub,omitempty"`
+	Fingerprint string         `json:"fingerprint,omitempty"`
+}
+
+// WithdrawRequestPayload is the off-chain twin of the on-chain WITHDRAW
+// instruction: same outcome (balance debit + TEE-signed withdrawal slip), but
+// authorized by an inner signature over the canonical bytes — the user's own
+// key or the session key bound to them — instead of msg.sender transport.
+// Exists so gasless PersonalAccounts can request withdrawals in seconds; the
+// returned slip is then relayed on-chain by anyone (executeWithdrawal is
+// permissionless).
+type WithdrawRequestPayload struct {
+	Contract  common.Address `json:"contract"`
+	User      common.Address `json:"user"`
+	Token     common.Address `json:"token"`
+	To        common.Address `json:"to"`
+	Amount    uint64         `json:"amount"`
+	Nonce     uint64         `json:"nonce"`
+	Signature hexutil.Bytes  `json:"signature"`
+}
+
+// WithdrawRequestDomain is the canonical-encoding domain separator, Solidity
+// bytes32("FlareOrderbookWithdrawReqV1")-style (left-aligned, zero-padded).
+var WithdrawRequestDomain = mkDomain("FlareOrderbookWithdrawReqV1")
+
+func mkDomain(s string) [32]byte {
+	var d [32]byte
+	copy(d[:], s)
+	return d
+}
+
+// CanonicalWithdrawRequestBytes returns the byte-string signed for an off-chain
+// WITHDRAW_REQUEST. Layout: abi.encode(domain, contract, user, token, to, amount, nonce).
+// The frontend (lib/fsaTee.ts) must produce the identical encoding.
+func CanonicalWithdrawRequestBytes(contract, user, token, to common.Address, amount, nonce uint64) ([]byte, error) {
+	bytes32Ty, err := abi.NewType("bytes32", "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("bytes32 type: %w", err)
+	}
+	addrTy, err := abi.NewType("address", "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("address type: %w", err)
+	}
+	uint256Ty, err := abi.NewType("uint256", "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("uint256 type: %w", err)
+	}
+	args := abi.Arguments{
+		{Type: bytes32Ty},
+		{Type: addrTy}, {Type: addrTy}, {Type: addrTy}, {Type: addrTy},
+		{Type: uint256Ty}, {Type: uint256Ty},
+	}
+	return args.Pack(
+		WithdrawRequestDomain,
+		contract, user, token, to,
+		new(big.Int).SetUint64(amount), new(big.Int).SetUint64(nonce),
+	)
 }
 
 // --- State (returned by GET_BOOK_STATE) ---
