@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
 import { cancelOrder, type CancelOrderResp } from "../lib/orderbook";
+import { useIdentity } from "./useIdentity";
 import type { StepReporter } from "../components/ui/ActionTray";
 
 /** Tray step labels, in the order this hook advances through them. */
@@ -12,7 +12,7 @@ interface CancelOrderArgs {
 }
 
 export function useCancelOrder() {
-  const { address } = useAccount();
+  const { address } = useIdentity();
   const queryClient = useQueryClient();
 
   return useMutation<CancelOrderResp, Error, CancelOrderArgs>({

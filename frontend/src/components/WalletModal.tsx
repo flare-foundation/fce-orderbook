@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
 import { parseUnits, formatUnits, type Address } from 'viem';
+import { useIdentity } from '../hooks/useIdentity';
 import { useDeposit, depositSteps } from '../hooks/useDeposit';
 import { useWithdraw, WITHDRAW_STEPS } from '../hooks/useWithdraw';
 import { useFaucet } from '../hooks/useFaucet';
+import {
+  useXamanFaucet, useXamanDeposit, useXamanWithdraw,
+  xamanDepositSteps, XAMAN_WITHDRAW_STEPS,
+} from '../hooks/useXamanOps';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { useMyState } from '../hooks/useMyState';
 import { useToast } from './ui/Toast';
@@ -76,11 +80,11 @@ interface WalletModalProps {
 }
 
 export function WalletModal({ open, onClose }: WalletModalProps) {
-  const { address } = useAccount();
+  const { address, walletKind } = useIdentity();
+  const isXaman = walletKind === 'xaman';
   const [tab, setTab] = useState<Tab>('FAUCET');
   const [tokenIdx, setTokenIdx] = useState(0);
   const [amount, setAmount] = useState('');
-  const [withdrawTo, setWithdrawTo] = useState('');
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const { toast } = useToast();
@@ -88,17 +92,17 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
   const deposit = useDeposit();
   const withdraw = useWithdraw();
   const faucet = useFaucet();
+  const xamanFaucet = useXamanFaucet();
+  const xamanDeposit = useXamanDeposit();
+  const xamanWithdraw = useXamanWithdraw();
   const { tokenInfo } = useWalletBalances();
   const { balances: teeBalances } = useMyState();
 
-  const tokens = getTokens();
+  const depositPending = deposit.isPending || xamanDeposit.isPending;
+  const withdrawPending = withdraw.isPending || xamanWithdraw.isPending;
+  const faucetPending = faucet.isPending || xamanFaucet.isPending;
 
-  // Default withdrawTo to connected wallet address
-  useEffect(() => {
-    if (address && !withdrawTo) {
-      setWithdrawTo(address);
-    }
-  }, [address, withdrawTo]);
+  const tokens = getTokens();
 
   // ESC closes modal
   useEffect(() => {
@@ -194,12 +198,17 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
     for (const [i, m] of mintable.entries()) {
       if (i > 0) job.advance();
       try {
-        await faucet.mutateAsync({
-          token: m.addr,
-          to: address,
-          amount: m.raw,
-          report: job,
-        });
+        if (isXaman) {
+          // Gasless PersonalAccount: the relayer pays the mint gas.
+          await xamanFaucet.mutateAsync({ token: m.addr, amount: m.raw, report: job });
+        } else {
+          await faucet.mutateAsync({
+            token: m.addr,
+            to: address,
+            amount: m.raw,
+            report: job,
+          });
+        }
         addHistory('MINT', m.symbol, m.human);
       } catch (e) {
         // One token failing shouldn't abort the rest — mark it and carry on.
@@ -244,15 +253,21 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
     }
     const job = tray.start({
       title: `Deposit ${amount} ${selectedToken.symbol}`,
-      steps: depositSteps(selectedToken.symbol),
+      steps: isXaman ? xamanDepositSteps(selectedToken.symbol) : depositSteps(selectedToken.symbol),
     });
     try {
-      const tx = await deposit.mutateAsync({
-        instructionSender: INSTRUCTION_SENDER,
-        token: selectedToken.address,
-        amount: rawAmount,
-        report: job,
-      });
+      const tx = isXaman
+        ? await xamanDeposit.mutateAsync({
+            token: selectedToken.address,
+            amount: rawAmount,
+            report: job,
+          })
+        : await deposit.mutateAsync({
+            instructionSender: INSTRUCTION_SENDER,
+            token: selectedToken.address,
+            amount: rawAmount,
+            report: job,
+          });
       job.finish({ summary: { tx: formatAddress(tx) } });
       addHistory('DEPOSIT', selectedToken.symbol, amount);
       setAmount('');
@@ -268,7 +283,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
       toast('Loading token decimals, please try again', 'error');
       return;
     }
-    if (!amount || !withdrawTo) return;
+    if (!amount || !address) return;
     let rawAmount: bigint;
     try {
       rawAmount = parseUnits(amount, decimals);
@@ -282,16 +297,25 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
     }
     const job = tray.start({
       title: `Withdraw ${amount} ${selectedToken.symbol}`,
-      steps: WITHDRAW_STEPS,
+      steps: isXaman ? XAMAN_WITHDRAW_STEPS : WITHDRAW_STEPS,
     });
     try {
-      const tx = await withdraw.mutateAsync({
-        instructionSender: INSTRUCTION_SENDER,
-        token: selectedToken.address,
-        amount: rawAmount,
-        to: withdrawTo as Address,
-        report: job,
-      });
+      // Withdrawals always pay the connected wallet — a free-typed destination
+      // silently kept paying the previously connected wallet across switches.
+      const tx = isXaman
+        ? await xamanWithdraw.mutateAsync({
+            token: selectedToken.address,
+            amount: rawAmount,
+            to: address,
+            report: job,
+          })
+        : await withdraw.mutateAsync({
+            instructionSender: INSTRUCTION_SENDER,
+            token: selectedToken.address,
+            amount: rawAmount,
+            to: address,
+            report: job,
+          });
       job.finish({ summary: { tx: formatAddress(tx) } });
       addHistory('WITHDRAW', selectedToken.symbol, amount);
       setAmount('');
@@ -300,14 +324,16 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
     }
   }
 
-  /** Re-run only step 3 using the signature cached when it failed. */
+  /** Re-run only the on-chain execute, from the cached/persisted authorization. */
   async function handleRetryExecute() {
     const job = tray.start({
       title: 'Retry withdrawal execution',
       steps: ['Execute on-chain'],
     });
     try {
-      const tx = await withdraw.retryExecute(INSTRUCTION_SENDER, job);
+      const tx = isXaman
+        ? await xamanWithdraw.retryExecute(job)
+        : await withdraw.retryExecute(INSTRUCTION_SENDER, job);
       job.finish({ summary: { tx: formatAddress(tx) } });
     } catch (e) {
       job.fail({ message: e instanceof Error ? e.message : 'Execute failed' });
@@ -350,6 +376,7 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
             </div>
           </div>
           <div className="wallet-hdr-right">
+            {isXaman && <span className="wallet-testnet-badge">XAMAN · FSA</span>}
             <span className="wallet-testnet-badge">TESTNET</span>
             <button className="panel-close" onClick={onClose}>×</button>
           </div>
@@ -436,9 +463,9 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                 <button
                   className="wallet-submit"
                   onClick={handleFaucet}
-                  disabled={faucet.isPending || !address}
+                  disabled={faucetPending || !address}
                 >
-                  {faucet.isPending ? 'MINTING...' : 'MINT ALL TEST TOKENS'}
+                  {faucetPending ? 'MINTING...' : 'MINT ALL TEST TOKENS'}
                 </button>
               </>
             )}
@@ -506,9 +533,9 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                 <button
                   className="wallet-submit"
                   onClick={handleDeposit}
-                  disabled={deposit.isPending || !amount || !address}
+                  disabled={depositPending || !amount || !address}
                 >
-                  {deposit.isPending
+                  {depositPending
                     ? 'PROCESSING...'
                     : `DEPOSIT ${selectedToken?.symbol}`}
                 </button>
@@ -573,16 +600,11 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                   </div>
                 </div>
                 <div className="wallet-field">
-                  <label>DESTINATION ADDRESS</label>
-                  <input
-                    type="text"
-                    value={withdrawTo}
-                    onChange={e => setWithdrawTo(e.target.value)}
-                    placeholder="0x..."
-                  />
+                  <label>DESTINATION (CONNECTED WALLET)</label>
+                  <input type="text" value={address ?? ''} readOnly disabled />
                 </div>
 
-                {withdraw.cachedSignature && !withdraw.isPending && (
+                {(isXaman ? xamanWithdraw.pendingSlip : withdraw.cachedSignature) && !withdrawPending && (
                   <div
                     style={{
                       border: '1px solid var(--line-2)',
@@ -599,7 +621,9 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                         letterSpacing: '0.12em',
                       }}
                     >
-                      STEP 3 FAILED — SIGNATURE CACHED
+                      {isXaman
+                        ? 'AUTHORIZATION PENDING — BALANCE ALREADY DEBITED'
+                        : 'STEP 3 FAILED — SIGNATURE CACHED'}
                     </div>
                     <button className="wallet-submit" onClick={handleRetryExecute}>
                       RETRY EXECUTE
@@ -610,9 +634,9 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                 <button
                   className="wallet-submit warn"
                   onClick={handleWithdraw}
-                  disabled={withdraw.isPending || !amount || !withdrawTo}
+                  disabled={withdrawPending || !amount || !address}
                 >
-                  {withdraw.isPending
+                  {withdrawPending
                     ? 'PROCESSING...'
                     : `WITHDRAW ${selectedToken?.symbol}`}
                 </button>

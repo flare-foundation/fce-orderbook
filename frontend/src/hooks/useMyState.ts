@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
 import { getMyState, type GetMyStateResp } from "../lib/orderbook";
+import { useIdentity } from "./useIdentity";
 
-/** Polls GET_MY_STATE every 3s for the connected wallet. */
+/** Polls GET_MY_STATE every 3s for the connected wallet (EOA or PersonalAccount). */
 export function useMyState() {
-  const { address } = useAccount();
+  const { address } = useIdentity();
   const queryClient = useQueryClient();
 
   const query = useQuery<GetMyStateResp>({

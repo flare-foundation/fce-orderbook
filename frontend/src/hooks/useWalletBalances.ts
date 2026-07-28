@@ -1,8 +1,9 @@
-import { useAccount, useReadContracts } from "wagmi";
+import { useReadContracts } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
 import { erc20Abi } from "../abi/erc20";
 import { PAIRS } from "../config/generated";
+import { useIdentity } from "./useIdentity";
 
 export interface TokenInfo {
   balance: bigint | undefined;
@@ -28,7 +29,7 @@ function uniqueTokens(): Address[] {
  * refetch doesn't drop decimals and break formatting downstream.
  */
 export function useWalletBalances() {
-  const { address } = useAccount();
+  const { address } = useIdentity();
   const queryClient = useQueryClient();
   const tokens = uniqueTokens();
 
