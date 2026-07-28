@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { WalletConnectButton } from './WalletConnectFlow';
+import { useIdentity } from '../hooks/useIdentity';
 
 interface HeaderProps {
   hiddenPanels: { id: string; label: string }[];
@@ -11,6 +12,7 @@ interface HeaderProps {
 
 export function Header({ hiddenPanels, onRestore, bottomHidden, onRestoreBottom, onOpenWallet }: HeaderProps) {
   const [clock, setClock] = useState('');
+  const { isConnected } = useIdentity();
 
   useEffect(() => {
     const tick = () => setClock(new Date().toLocaleTimeString('en-GB', { hour12: false, timeZone: 'UTC' }) + ' UTC');
@@ -54,24 +56,10 @@ export function Header({ hiddenPanels, onRestore, bottomHidden, onRestoreBottom,
           <span>LIVE</span>
         </div>
         <span className="hdr-clock">{clock}</span>
-        <button className="hdr-wallet-btn" onClick={onOpenWallet}>WALLET</button>
-        <ConnectButton.Custom>
-          {({ account, chain, openConnectModal, openAccountModal, mounted }) => {
-            if (!mounted) return null;
-            if (!account || !chain) {
-              return (
-                <button className="hdr-user" onClick={openConnectModal}>
-                  CONNECT
-                </button>
-              );
-            }
-            return (
-              <button className="hdr-user" onClick={openAccountModal}>
-                {account.displayName}
-              </button>
-            );
-          }}
-        </ConnectButton.Custom>
+        {isConnected && (
+          <button className="hdr-wallet-btn" onClick={onOpenWallet}>WALLET</button>
+        )}
+        <WalletConnectButton />
       </div>
     </header>
   );

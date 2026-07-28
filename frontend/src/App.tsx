@@ -7,6 +7,8 @@ import { coston2 } from "./config/chain";
 import { env } from "./config/env";
 import { ToastProvider } from "./components/ui/Toast";
 import { TrayProvider } from "./components/ui/ActionTray";
+import { XamanProvider } from "./contexts/XamanContext";
+import { XamanSignModal } from "./components/XamanSignModal";
 import { Trade } from "./pages/Trade";
 
 const config = getDefaultConfig({
@@ -19,12 +21,17 @@ const queryClient = new QueryClient();
 
 export default function App() {
   return (
-    <WagmiProvider config={config}>
+    // reconnectOnMount={false}: the app always starts disconnected — wallets
+    // are picked explicitly via the connect modal (mirrors shielded-transfer).
+    <WagmiProvider config={config} reconnectOnMount={false}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={darkTheme({ accentColor: '#c96aa8', accentColorForeground: '#0a0a0a', borderRadius: 'none', fontStack: 'system' })}>
           <ToastProvider>
             <TrayProvider>
-              <Trade />
+              <XamanProvider>
+                <Trade />
+                <XamanSignModal />
+              </XamanProvider>
             </TrayProvider>
           </ToastProvider>
         </RainbowKitProvider>

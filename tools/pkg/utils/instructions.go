@@ -25,6 +25,11 @@ func DeployInstructionSender(s *support.Support) (common.Address, *orderbook.Ord
 	deployer := crypto.PubkeyToAddress(s.Prv.PublicKey)
 	admins := []common.Address{deployer}
 
+	// Flare's eth_estimateGas underestimates contract-creation code-deposit gas
+	// ("contract creation code storage out of gas"), same root cause as the 2×
+	// buffer in xaman-service's sendWithBuffer. Fixed generous limit instead.
+	opts.GasLimit = 5_000_000
+
 	// Both registry args are the FlareTeeManager diamond proxy: the diamond
 	// routes ExtensionManager and MachineManager calls to the right facets.
 	address, tx, contract, err := orderbook.DeployOrderbookInstructionSender(

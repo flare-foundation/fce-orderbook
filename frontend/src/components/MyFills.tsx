@@ -1,5 +1,5 @@
 import { formatUnits } from 'viem';
-import { useAccount } from 'wagmi';
+import { useIdentity } from '../hooks/useIdentity';
 import { useMyState } from '../hooks/useMyState';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { PAIRS } from '../config/generated';
@@ -18,7 +18,7 @@ function fmtTime(ts: number): string {
 }
 
 export function MyFills({ pair }: MyFillsProps) {
-  const { address } = useAccount();
+  const { address } = useIdentity();
   const { matches } = useMyState();
   const { tokenInfo } = useWalletBalances();
 

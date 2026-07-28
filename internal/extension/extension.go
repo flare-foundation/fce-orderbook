@@ -14,6 +14,7 @@ import (
 	"extension-scaffold/pkg/orderbook"
 	"extension-scaffold/pkg/types"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/flare-foundation/go-flare-common/pkg/logger"
 	"github.com/flare-foundation/go-flare-common/pkg/tee/instruction"
 	teetypes "github.com/flare-foundation/tee-node/pkg/types"
@@ -61,6 +62,11 @@ type Extension struct {
 	history       *History                                                               // deposit/withdrawal/order history per user
 	admins        map[string]bool                                                        // admin addresses
 	signPort      int                                                                    // TEE sign server port
+
+	// FSA (Flare Smart Accounts / Xaman) support.
+	fsa               *fsaStore      // session-key bindings + replay nonces
+	paResolver        PaResolver     // XRPL address → PersonalAccount (nil when CHAIN_URL unset)
+	instructionSender common.Address // this deployment's InstructionSender (pins signed requests)
 }
 
 func New(extensionPort, signPort int) *Extension {
@@ -75,10 +81,21 @@ func New(extensionPort, signPort int) *Extension {
 		history:       newHistory(),
 		admins:        make(map[string]bool),
 		signPort:      signPort,
+		fsa:           newFsaStore(),
 	}
 
 	for _, addr := range config.AdminAddresses {
 		e.admins[strings.ToLower(addr)] = true
+	}
+
+	if config.InstructionSender != "" && common.IsHexAddress(config.InstructionSender) {
+		e.instructionSender = common.HexToAddress(config.InstructionSender)
+	}
+	if config.ChainURL != "" && common.IsHexAddress(config.MasterAccountController) {
+		e.paResolver = NewMacClient(config.ChainURL, common.HexToAddress(config.MasterAccountController))
+		logger.Infof("FSA enabled: MAC %s via %s, instruction sender %s", config.MasterAccountController, config.ChainURL, e.instructionSender.Hex())
+	} else {
+		logger.Infof("FSA session binds disabled (CHAIN_URL not set)")
 	}
 
 	if config.BalancesPath != "" {
@@ -204,6 +221,12 @@ func (e *Extension) processDirect(action teetypes.Action) (int, []byte) {
 		ar = e.processGetCandles(action, df, di.Message)
 	case di.OPCommand == teeutils.ToHash(config.OPCommandExportHistory):
 		ar = e.processExportHistory(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandBindSessionSig):
+		ar = e.processBindSessionSig(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandGetBinding):
+		ar = e.processGetBinding(action, df, di.Message)
+	case di.OPCommand == teeutils.ToHash(config.OPCommandWithdrawRequest):
+		ar = e.processWithdrawRequest(action, df, di.Message)
 	default:
 		return http.StatusNotImplemented, []byte(fmt.Sprintf(
 			"unsupported direct op command: %s", di.OPCommand.Hex(),

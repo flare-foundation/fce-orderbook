@@ -25,6 +25,14 @@ const (
 	OPCommandGetCandles    = "GET_CANDLES"
 	OPCommandExportHistory = "EXPORT_HISTORY"
 
+	// FSA (Flare Smart Accounts / Xaman) direct ops.
+	OPCommandBindSessionSig  = "BIND_SESSION_SIG"
+	OPCommandGetBinding      = "GET_BINDING"
+	OPCommandWithdrawRequest = "WITHDRAW_REQUEST"
+
+	// MasterAccountController — same address on every Flare network.
+	DefaultMasterAccountController = "0x434936d47503353f06750Db1A444DBDC5F0AD37c"
+
 	TimeoutShutdown = 5 * time.Second
 )
 
@@ -35,6 +43,14 @@ var (
 	TypesServerPort = 8100
 	AdminAddresses  []string
 	BalancesPath    string // optional: path to persist balance manager state
+
+	// FSA support. ChainURL is required for BIND_SESSION_SIG (PersonalAccount
+	// resolution via the MasterAccountController); without it FSA ops are
+	// disabled. InstructionSender pins signed off-chain requests to this
+	// deployment (from config/extension.env via the compose env_file).
+	ChainURL                string
+	MasterAccountController = DefaultMasterAccountController
+	InstructionSender       string
 )
 
 // TradingPairConfig maps a pair name to its base and quote token addresses.
@@ -76,6 +92,15 @@ func init() {
 	}
 	if v := os.Getenv("BALANCES_PATH"); v != "" {
 		BalancesPath = v
+	}
+	if v := os.Getenv("CHAIN_URL"); v != "" {
+		ChainURL = v
+	}
+	if v := os.Getenv("MASTER_ACCOUNT_CONTROLLER"); v != "" {
+		MasterAccountController = v
+	}
+	if v := os.Getenv("INSTRUCTION_SENDER"); v != "" {
+		InstructionSender = v
 	}
 	if v := os.Getenv("ADMIN_ADDRESSES"); v != "" {
 		for _, addr := range strings.Split(v, ",") {

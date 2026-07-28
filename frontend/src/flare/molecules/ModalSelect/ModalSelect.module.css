@@ -1,0 +1,63 @@
+.box {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--mantine-radius-3n);
+  background-color: var(--mantine-color-neutrals-fills-white);
+}
+
+.box[data-status='selected'] {
+  border: 1px solid var(--mantine-color-pinks-stroke-normal-brand);
+}
+
+.box:not([data-status='selected']):not([data-status='disabled']):not([data-status='connected']):hover {
+  border: 1px solid var(--mantine-color-pinks-stroke-normal-brand);
+}
+
+.box[data-status='disabled'] {
+  opacity: 0.5;
+}
+
+.box[data-element='network'] {
+  background-color: var(--mantine-color-neutrals-fills-lightest);
+}
+
+.iconWrapper {
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  width: 32px;
+  height: 32px;
+  background-color: var(--mantine-color-pinks-stroke-normal-brand);
+  display: flex;
+  align-content: center;
+  flex-wrap: wrap;
+
+  justify-content: center;
+  border-bottom-left-radius: var(--mantine-radius-3n);
+}
+
+/* vendored: `@mixin smaller-than $mantine-breakpoint-sm` flattened to plain
+   @media — this app has no postcss-preset-mantine */
+@media (max-width: 47.99em) {
+  .iconWrapper {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.link[data-status='disabled'] {
+  cursor: not-allowed;
+}
+
+.link[data-status='connected'] {
+  cursor: auto;
+  color: var(--mantine-color-token-pairs-neutral-lighter-medium);
+}
+
+.link[data-status=''] {
+  cursor: pointer;
+}
+
+.link {
+  color: var(--mantine-color-pinks-fills-darker);
+}

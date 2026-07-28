@@ -1,0 +1,36 @@
+.root {
+  background-color: var(--mantine-color-neutrals-fills-white);
+  border: 0.75px solid var(--mantine-color-neutrals-stroke-lighter-medium);
+  border-radius: 10px;
+  padding: var(--mantine-spacing-3n);
+  height: 46px;
+  align-items: center;
+}
+
+.indicator {
+  background-color: transparent;
+  border: none;
+  height: 0px;
+}
+
+.label {
+  width: fit-content;
+  height: fit-content;
+  padding-block: var(--mantine-spacing-2n);
+  padding-inline: var(--mantine-spacing-md);
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  color: var(--mantine-color-neutrals-fills-medium) !important;
+
+  &:where([data-active]) {
+    background-color: var(--mantine-color-neutrals-fills-lightest);
+    border: 0.75px solid var(--mantine-color-neutrals-stroke-lighter-medium);
+    border-radius: 10px;
+    color: var(--mantine-color-neutrals-fills-dark) !important;
+  }
+}
+
+.control::before {
+  display: none;
+}

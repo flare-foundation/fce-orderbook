@@ -1,0 +1,16 @@
+{
+  "name": "xaman-service",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Minimal Xaman (XUMM) backend for the FSA web-dApp model: creates sign payloads, keeps the API secret server-side, relays gas for gasless PersonalAccounts.",
+  "scripts": {
+    "start": "node --env-file=.env server.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "xumm-sdk": "^1.11.2",
+    "ethers": "^6.13.4"
+  }
+}

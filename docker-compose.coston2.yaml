@@ -8,6 +8,9 @@ services:
   extension-tee:
     environment:
       - CHAIN_URL=${CHAIN_URL:-https://coston2-api.flare.network/ext/C/rpc}
+      # Coston2 chain id — without this the base compose default (31337) wins and
+      # register-tee reverts with InvalidTeePublicKeyOrSignature (signature is chain-id-bound).
+      - CHAIN_ID=${CHAIN_ID:-114}
 
 networks:
   default:

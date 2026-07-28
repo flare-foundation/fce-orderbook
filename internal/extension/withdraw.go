@@ -27,21 +27,32 @@ func (e *Extension) processWithdraw(action teetypes.Action, df *instruction.Data
 		return buildResult(action, df, nil, 0, fmt.Errorf("decoding withdraw message: %w", err))
 	}
 
-	user := strings.ToLower(sender.Hex())
+	resp, err := e.issueWithdrawal(strings.ToLower(sender.Hex()), token, amount, to, df.InstructionID)
+	if err != nil {
+		return buildResult(action, df, nil, 0, err)
+	}
+	data, _ := json.Marshal(resp)
 
+	return buildResult(action, df, data, 1, nil)
+}
+
+// issueWithdrawal debits the user's balance and returns a TEE-signed withdrawal
+// authorization the contract's executeWithdrawal accepts. Shared by the
+// on-chain WITHDRAW path and the off-chain WITHDRAW_REQUEST (FSA) path — the
+// two differ only in how the request is authorized.
+func (e *Extension) issueWithdrawal(user string, token common.Address, amount uint64, to common.Address, withdrawalID common.Hash) (*types.WithdrawResponse, error) {
 	if amount == 0 {
-		return buildResult(action, df, nil, 0, fmt.Errorf("withdraw amount must be greater than zero"))
+		return nil, fmt.Errorf("withdraw amount must be greater than zero")
 	}
 
 	// Debit balance.
 	if err := e.balances.Withdraw(user, token, amount); err != nil {
-		return buildResult(action, df, nil, 0, fmt.Errorf("debiting balance: %w", err))
+		return nil, fmt.Errorf("debiting balance: %w", err)
 	}
 
 	// Build the withdrawal message: abi.encodePacked(token, amount, to, withdrawalId).
 	// We send the RAW packed bytes (not keccak256'd) because the TEE sign server
 	// applies keccak256 + EIP-191 prefix internally; see signWithTEE below.
-	withdrawalID := df.InstructionID
 	message := packWithdrawalMessage(token, amount, to, withdrawalID)
 
 	// Sign via TEE sign server.
@@ -49,7 +60,7 @@ func (e *Extension) processWithdraw(action teetypes.Action, df *instruction.Data
 	if err != nil {
 		// Rollback: re-credit balance on signing failure.
 		_ = e.balances.Deposit(user, token, amount)
-		return buildResult(action, df, nil, 0, fmt.Errorf("signing withdrawal: %w", err))
+		return nil, fmt.Errorf("signing withdrawal: %w", err)
 	}
 
 	e.mu.Lock()
@@ -62,17 +73,14 @@ func (e *Extension) processWithdraw(action teetypes.Action, df *instruction.Data
 	e.mu.Unlock()
 
 	bal := e.balances.Get(user, token)
-	resp := types.WithdrawResponse{
+	return &types.WithdrawResponse{
 		Token:        token,
 		Amount:       amount,
 		To:           to,
 		WithdrawalID: withdrawalID,
 		Signature:    sig,
 		Available:    bal.Available,
-	}
-	data, _ := json.Marshal(resp)
-
-	return buildResult(action, df, data, 1, nil)
+	}, nil
 }
 
 // packWithdrawalMessage returns abi.encodePacked(token, amount, to, withdrawalId)

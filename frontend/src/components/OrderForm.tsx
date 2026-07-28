@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
 import { formatUnits } from 'viem';
+import { useIdentity } from '../hooks/useIdentity';
 import { usePlaceOrder, PLACE_ORDER_STEPS } from '../hooks/usePlaceOrder';
 import { useMyState } from '../hooks/useMyState';
 import { useWalletBalances } from '../hooks/useWalletBalances';
@@ -14,7 +14,7 @@ interface OrderFormProps {
 }
 
 export function OrderForm({ pair, prefillPrice }: OrderFormProps) {
-  const { isConnected } = useAccount();
+  const { isConnected } = useIdentity();
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'limit' | 'market'>('limit');
   const [price, setPrice] = useState('');

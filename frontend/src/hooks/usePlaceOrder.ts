@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
 import { placeOrder, type PlaceOrderReq, type PlaceOrderResp } from "../lib/orderbook";
+import { useIdentity } from "./useIdentity";
 import { useWalletBalances } from "./useWalletBalances";
 import { scalePrice } from "../lib/price";
 import { PAIRS } from "../config/generated";
@@ -12,7 +12,7 @@ export const PLACE_ORDER_STEPS = ["Submit to TEE", "TEE execution"];
 type PlaceOrderArgs = Omit<PlaceOrderReq, "sender"> & { report?: StepReporter };
 
 export function usePlaceOrder() {
-  const { address } = useAccount();
+  const { address } = useIdentity();
   const queryClient = useQueryClient();
   const { tokenInfo } = useWalletBalances();
 

@@ -1,0 +1,122 @@
+.unstyledButton {
+  border-width: 1px;
+  border-style: solid;
+  background-color: var(--mantine-color-neutrals-fills-white);
+}
+
+.unstyledButton[data-nothovered='true'],
+.unstyledButton[data-hovered='true'],
+.unstyledButton[data-applied='true'],
+.unstyledButton[data-disabled='true'] {
+  background-color: var(--mantine-color-neutrals-fills-white);
+}
+
+.unstyledButton[data-nothovered='true'] {
+  border-color: var(--mantine-color-semantic-dropdown-primary-outlined-border-default);
+  color: var(--mantine-color-semantic-dropdown-primary-outlined-text-default);
+
+  &:hover {
+    background-color: var(--mantine-color-semantic-dropdown-primary-outlined-bg-hover);
+  }
+}
+
+.unstyledButton[data-hovered='true'] {
+  border-color: var(--mantine-color-semantic-dropdown-primary-outlined-border-hover);
+  color: var(--mantine-color-semantic-dropdown-primary-outlined-text-hover);
+
+  &:hover {
+    background-color: var(--mantine-color-semantic-dropdown-primary-outlined-bg-hover);
+  }
+}
+
+.unstyledButton[data-applied='true'] {
+  border-color: var(--mantine-color-semantic-dropdown-primary-outlined-border-hover);
+  color: var(--mantine-color-semantic-dropdown-primary-outlined-text-hover);
+
+  &:hover {
+    background-color: var(--mantine-color-semantic-dropdown-primary-outlined-bg-hover);
+  }
+}
+
+.unstyledButton[data-opened='true'] {
+  border-bottom-right-radius: 0px !important;
+  border-bottom-left-radius: 0px !important;
+  border-bottom: none;
+  border-color: var(--mantine-color-semantic-dropdown-primary-outlined-border-hover);
+  color: var(--mantine-color-semantic-dropdown-primary-outlined-text-hover);
+
+  &:hover {
+    background-color: var(--mantine-color-semantic-dropdown-primary-outlined-bg-hover);
+  }
+}
+
+.unstyledButton[data-disabled='true'] {
+  cursor: not-allowed;
+  border-color: var(--mantine-color-semantic-dropdown-primary-outlined-border-disabled);
+  color: var(--mantine-color-semantic-button-tertiary-outlined-text-disabled);
+}
+
+.unstyledButton[data-size='lg'] {
+  border-radius: var(--mantine-radius-xxl);
+  padding-inline: var(--mantine-spacing-xl);
+  padding-block: var(--mantine-spacing-md);
+}
+
+.unstyledButton[data-size='md'] {
+  border-radius: var(--mantine-radius-lg);
+  padding-inline: var(--mantine-spacing-xl);
+  padding-block: var(--mantine-spacing-xs);
+}
+
+.unstyledButton[data-size='xl'] {
+  border-radius: var(--mantine-radius-lg);
+  padding-inline: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-sm);
+}
+
+/* vendored: `@mixin larger-than $mantine-breakpoint-sm` flattened to plain
+   @media — this app has no postcss-preset-mantine */
+@media (min-width: 48em) {
+  .unstyledButton[data-size='xl'] {
+    min-width: 362px;
+  }
+}
+
+.dropdown,
+.dropdownHovered {
+  border-radius: 0px 0px var(--mantine-radius-lg) var(--mantine-radius-lg);
+  border-width: 1px;
+  border-style: solid;
+  border-top: none;
+  overflow: hidden;
+  padding: 0px 0px var(--mantine-spacing-3n) 0px;
+  background-color: var(--mantine-color-neutrals-fills-white);
+}
+
+.dropdown {
+  padding-bottom: var(--mantine-spacing-3n);
+  border-color: var(--mantine-color-semantic-dropdown-primary-outlined-border-default);
+  color: var(--mantine-color-semantic-dropdown-primary-outlined-text-default);
+}
+
+.dropdown[data-selected] {
+  padding-bottom: var(--mantine-spacing-3n);
+
+  border-color: var(--mantine-color-semantic-dropdown-primary-outlined-border-hover);
+  color: var(--mantine-color-semantic-dropdown-primary-outlined-text-hover);
+}
+
+.option {
+  padding-block: var(--mantine-spacing-xs);
+  padding-inline: var(--mantine-spacing-xl);
+  border-radius: 0px;
+
+  :hover {
+    background-color: var(--mantine-color-semantic-dropdown-primary-outlined-bg-hover);
+  }
+}
+
+.option[data-size='xl'] {
+  padding-block: var(--mantine-spacing-2n);
+  padding-inline: var(--mantine-spacing-md);
+}
