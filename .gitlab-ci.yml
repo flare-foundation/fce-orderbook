@@ -1,0 +1,147 @@
+# Builds the deployable images for this extension.
+#
+#   extension-tee  — built here from ./Dockerfile
+#   tee-proxy      — NOT built here. There is no proxy Dockerfile in this repo:
+#                    docker-compose.yaml:16 and docker/gcp-coston2/gcp-ext-proxy
+#                    both run the upstream tee-proxy image with our config
+#                    mounted at /app/config/config.toml. tee/tee-proxy's own
+#                    pipeline builds it; the mirror job below copies it into this
+#                    project's registry so ${REGISTRY}/tee-proxy resolves for the
+#                    deploy compose files.
+#
+# Deploy: put EXTENSION_TEE_IMAGE from the extension-tee job's dotenv artifact
+# into docker/gcp-coston2/.env. It's a digest ref, so the Confidential VM runs
+# exactly the bytes whose code hash you registered on-chain.
+#
+# Runner requirement: buildx on privileged docker:dind. Kaniko — what
+# tee/tee-proxy uses — cannot build this Dockerfile: it supports neither
+# `RUN --mount=type=cache` (Dockerfile:17) nor the `rewrite-timestamp` exporter
+# REPRODUCIBILITY.md depends on.
+
+stages:
+  - build
+  - publish
+
+variables:
+  # tee-node is a sibling repo, not a submodule — the Dockerfile needs it beside
+  # us because go.mod declares `replace ... tee-node => ../../tee-node`.
+  TEE_NODE_REPO: gitlab.com/flarenetwork/tee/tee-node.git
+  # ponytail: `main` keeps CI green day to day, but the binary embeds whatever
+  # commit this resolves to and nothing in this repo records it (go.mod pins
+  # tee-node at v0.0.0 + replace). Set a commit SHA in the pipeline variables for
+  # any build you register on-chain, or the image is not reproducible from this
+  # repo's history alone.
+  TEE_NODE_REF: main
+  # Bakes config/${NETWORK}/pairs.json into the image (Dockerfile:65).
+  NETWORK: coston2
+  # Upstream proxy image to mirror. Override per deploy.
+  TEE_PROXY_SOURCE: europe-west1-docker.pkg.dev/flare-network-staging/containers/tee-proxy
+  TEE_PROXY_TAG: latest
+  IMAGE: $CI_REGISTRY_IMAGE/extension-tee
+
+.dind:
+  image: docker:28-cli
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_TLS_VERIFY: 1
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+
+# Assembles the build context and the reproducible-build inputs. before_script
+# and script share one shell, so CTX/SOURCE_DATE_EPOCH carry over.
+.buildx:
+  extends: .dind
+  before_script:
+    - apk add --no-cache git
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    # rewrite-timestamp needs the docker-container driver; the default builder
+    # silently ignores it (moby/buildkit#4230).
+    - docker buildx create --driver docker-container --name ci --bootstrap --use
+    # The context must be the parent of tee-node/ and extension-examples/, and
+    # CI_PROJECT_DIR already ends in .../extension-examples/orderbook — so
+    # cloning two levels up reproduces the local layout with no copying.
+    - CTX="$(cd "$CI_PROJECT_DIR/../.." && pwd)"
+    - git clone --depth 1 --branch "$TEE_NODE_REF" "https://gitlab-ci-token:${CI_JOB_TOKEN}@${TEE_NODE_REPO}" "$CTX/tee-node"
+    # Fail here, not 200 lines into a COPY that cannot resolve.
+    - test -d "$CTX/tee-node" || { echo "tee-node missing from build context $CTX"; exit 1; }
+    - test -f "$CTX/extension-examples/orderbook/config/$NETWORK/pairs.json" || { echo "context layout wrong, or no config/$NETWORK"; exit 1; }
+    - SOURCE_DATE_EPOCH="$(git -C "$CI_PROJECT_DIR" log -1 --format=%ct)"
+    - echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH  NETWORK=$NETWORK  tee-node=$TEE_NODE_REF"
+
+### EXTENSION TEE #############################################################
+extension-tee:
+  stage: build
+  extends: .buildx
+  rules:
+    # A tag is a release — always build, never manual, never gated.
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - TAGS="-t $IMAGE:$CI_COMMIT_SHORT_SHA"
+    - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $IMAGE:$CI_COMMIT_TAG"; fi
+    # --provenance/--sbom off: attestations embed build time and turn the image
+    # into an index, so the digest changes per build — defeating the point.
+    # No --load: rewrite-timestamp conflicts with unpack (moby/buildkit#4230).
+    - >-
+      docker buildx build --builder ci --platform linux/amd64
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH"
+      --build-arg NETWORK="$NETWORK"
+      --provenance=false --sbom=false
+      $TAGS
+      --output "type=image,rewrite-timestamp=true,push=true"
+      -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
+    - DIGEST="$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" --format '{{.Manifest.Digest}}')"
+    - echo "EXTENSION_TEE_IMAGE=$IMAGE@$DIGEST" | tee deploy.env
+  artifacts:
+    reports:
+      dotenv: deploy.env
+
+# REPRODUCIBILITY.md's claim is only true if something checks it: rebuild cold
+# and compare digests. Manual — it's a second full build.
+verify-reproducible:
+  stage: publish
+  extends: .buildx
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+      allow_failure: true
+  needs:
+    - job: extension-tee
+      artifacts: true
+  script:
+    - VERIFY="$IMAGE:verify-$CI_COMMIT_SHORT_SHA"
+    - >-
+      docker buildx build --builder ci --platform linux/amd64 --no-cache
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH"
+      --build-arg NETWORK="$NETWORK"
+      --provenance=false --sbom=false
+      -t "$VERIFY"
+      --output "type=image,rewrite-timestamp=true,push=true"
+      -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
+    - REBUILT="$(docker buildx imagetools inspect "$VERIFY" --format '{{.Manifest.Digest}}')"
+    - echo "built:   $EXTENSION_TEE_IMAGE"
+    - echo "rebuilt: $REBUILT"
+    - test "${EXTENSION_TEE_IMAGE##*@}" = "$REBUILT" || { echo "NOT REPRODUCIBLE — digests differ"; exit 1; }
+
+### TEE PROXY (mirror, not a build) ###########################################
+tee-proxy:
+  stage: publish
+  extends: .dind
+  rules:
+    # A tag is a release — always mirror, never manual, never gated.
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  # No dependency on extension-tee: it's a different image from a different repo,
+  # so a failed TEE build must not skip the mirror. Also starts it immediately
+  # instead of waiting out the build stage.
+  needs: []
+  script:
+    # Add a docker login for TEE_PROXY_SOURCE's registry if it is not public.
+    - docker pull "$TEE_PROXY_SOURCE:$TEE_PROXY_TAG"
+    - docker tag "$TEE_PROXY_SOURCE:$TEE_PROXY_TAG" "$CI_REGISTRY_IMAGE/tee-proxy:$TEE_PROXY_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/tee-proxy:$TEE_PROXY_TAG"
+    - echo "Deploy with REGISTRY=$CI_REGISTRY_IMAGE TEE_PROXY_TAG=$TEE_PROXY_TAG"
