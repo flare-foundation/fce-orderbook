@@ -123,8 +123,9 @@ verify-reproducible:
       --output "type=image,rewrite-timestamp=true,push=true"
       -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
     - REBUILT="$(docker buildx imagetools inspect "$VERIFY" --format '{{.Manifest.Digest}}')"
-    - echo "built:   $EXTENSION_TEE_IMAGE"
-    - echo "rebuilt: $REBUILT"
+    # Quoted: a bare `: ` in a plain YAML scalar parses as a mapping, not a string.
+    - 'echo "built:   $EXTENSION_TEE_IMAGE"'
+    - 'echo "rebuilt: $REBUILT"'
     - test "${EXTENSION_TEE_IMAGE##*@}" = "$REBUILT" || { echo "NOT REPRODUCIBLE — digests differ"; exit 1; }
 
 ### TEE PROXY (mirror, not a build) ###########################################
