@@ -27,7 +27,9 @@ stages:
 variables:
   # tee-node is a sibling repo, not a submodule — the Dockerfile needs it beside
   # us because go.mod declares `replace ... tee-node => ../../tee-node`.
-  TEE_NODE_REPO: gitlab.com/flarenetwork/tee/tee-node.git
+  # Public GitHub mirror of gitlab.com/flarenetwork/tee/tee-node (same refs), so
+  # the clone needs no CI_JOB_TOKEN and no job-token allowlist on that project.
+  TEE_NODE_REPO: https://github.com/flare-foundation/tee-node.git
   # ponytail: `main` keeps CI green day to day, but the binary embeds whatever
   # commit this resolves to and nothing in this repo records it (go.mod pins
   # tee-node at v0.0.0 + replace). Set a commit SHA in the pipeline variables for
@@ -77,7 +79,7 @@ variables:
     # survives, and `git clone` into a non-empty path fails the whole job before
     # the script ever runs — which surfaces only as a missing deploy.env.
     - rm -rf "$CTX/tee-node"
-    - git clone --depth 1 --branch "$TEE_NODE_REF" "https://gitlab-ci-token:${CI_JOB_TOKEN}@${TEE_NODE_REPO}" "$CTX/tee-node"
+    - git clone --depth 1 --branch "$TEE_NODE_REF" "$TEE_NODE_REPO" "$CTX/tee-node"
     # Fail here, not 200 lines into a COPY that cannot resolve.
     - test -d "$CTX/tee-node" || { echo "tee-node missing from build context $CTX"; exit 1; }
     - test -f "$CTX/extension-examples/orderbook/config/$NETWORK/pairs.json" || { echo "context layout wrong, or no config/$NETWORK"; exit 1; }
@@ -108,6 +110,8 @@ extension-tee:
       $TAGS
       --output "type=image,rewrite-timestamp=true,push=true"
       -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
+    # Read it back from the registry: proves the push landed rather than trusting
+    # that push=true exited 0.
     - DIGEST="$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" --format '{{.Manifest.Digest}}')"
     # A failed inspect leaves DIGEST empty without failing the assignment, which
     # would ship a deployable-looking `image@` ref that resolves to nothing.
@@ -178,4 +182,9 @@ tee-proxy:
       --provenance=false --sbom=false
       $TAGS --push
       -f /tmp/tee-proxy/Dockerfile /tmp/tee-proxy
+    # Read it back from the registry: proves the push landed rather than trusting
+    # that --push exited 0. Fails the job if the tag isn't there.
+    - PROXY_DIGEST="$(docker buildx imagetools inspect "$PROXY_IMAGE:$CI_COMMIT_SHORT_SHA" --format '{{.Manifest.Digest}}')"
+    - 'test -n "$PROXY_DIGEST" || { echo "push did not land for $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA"; exit 1; }'
+    - 'echo "pushed: $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA@$PROXY_DIGEST"'
     - echo "Deploy with REGISTRY=$CI_REGISTRY_IMAGE TEE_PROXY_TAG=$TEE_PROXY_TAG"
