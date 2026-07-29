@@ -88,6 +88,8 @@ extension-tee:
     # Tags only. A branch push builds nothing — an image you can't point at a tag
     # is an image nobody deploys, and this build is not cheap.
     - if: $CI_COMMIT_TAG
+    # TEMPORARY: exercising the pipeline itself. Delete before merging.
+    - if: $CI_COMMIT_BRANCH == "add-gitlab-ci"
   script:
     - TAGS="-t $IMAGE:$CI_COMMIT_SHORT_SHA"
     - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $IMAGE:$CI_COMMIT_TAG"; fi
@@ -148,6 +150,8 @@ tee-proxy:
     # A tag is a release — always build, never manual, never gated.
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # TEMPORARY: exercising the pipeline itself. Delete before merging.
+    - if: $CI_COMMIT_BRANCH == "add-gitlab-ci"
   # No dependency on extension-tee: different image, different repo, so a failed
   # TEE build must not skip it. Also starts immediately instead of waiting out
   # the build stage.
@@ -158,7 +162,10 @@ tee-proxy:
     - apk add --no-cache git
     - rm -rf /tmp/tee-proxy
     - git clone --depth 1 --branch "$TEE_PROXY_REF" "$TEE_PROXY_REPO" /tmp/tee-proxy
-    - TAGS="-t $PROXY_IMAGE:$TEE_PROXY_TAG"
+    # Always a sha tag; $TEE_PROXY_TAG (latest) only from main or a git tag, so a
+    # branch test can't quietly repoint what the deploy compose files default to.
+    - TAGS="-t $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - if [ -n "$CI_COMMIT_TAG" ] || [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then TAGS="$TAGS -t $PROXY_IMAGE:$TEE_PROXY_TAG"; fi
     - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $PROXY_IMAGE:$CI_COMMIT_TAG"; fi
     # Default builder is fine here: this Dockerfile has no BuildKit cache mounts,
     # and the proxy image makes no reproducibility claim (alpine:latest, unpinned).
