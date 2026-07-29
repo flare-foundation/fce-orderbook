@@ -62,9 +62,13 @@ variables:
   before_script:
     - apk add --no-cache git
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    # buildx will not consume TLS config from DOCKER_HOST/DOCKER_CERT_PATH env
+    # vars ("could not create a builder instance with TLS data loaded from
+    # environment") — it needs a docker context wrapping the dind service.
+    - docker context create dind --docker "host=$DOCKER_HOST,ca=$DOCKER_CERT_PATH/ca.pem,cert=$DOCKER_CERT_PATH/cert.pem,key=$DOCKER_CERT_PATH/key.pem"
     # rewrite-timestamp needs the docker-container driver; the default builder
     # silently ignores it (moby/buildkit#4230).
-    - docker buildx create --driver docker-container --name ci --bootstrap --use
+    - docker buildx create --name ci --driver docker-container --use --bootstrap dind
     # The context must be the parent of tee-node/ and extension-examples/, and
     # CI_PROJECT_DIR already ends in .../extension-examples/orderbook — so
     # cloning two levels up reproduces the local layout with no copying.
