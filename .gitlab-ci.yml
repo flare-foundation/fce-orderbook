@@ -36,7 +36,7 @@ variables:
   # any build you register on-chain, or the image is not reproducible from this
   # repo's history alone.
   TEE_NODE_REF: main
-  # Bakes config/${NETWORK}/pairs.json into the image (Dockerfile:65).
+  # Bakes config/${NETWORK}/pairs.json into the image (Dockerfile:57).
   NETWORK: coston2
   # Proxy source. Public, so no credentials needed — but pin TEE_PROXY_REF to a
   # SHA for a release, same reasoning as TEE_NODE_REF.
@@ -112,10 +112,19 @@ extension-tee:
       -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
     # Read it back from the registry: proves the push landed rather than trusting
     # that push=true exited 0.
-    - DIGEST="$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" --format '{{.Manifest.Digest}}')"
-    # A failed inspect leaves DIGEST empty without failing the assignment, which
-    # would ship a deployable-looking `image@` ref that resolves to nothing.
-    - test -n "$DIGEST" || { echo "could not read digest for $IMAGE:$CI_COMMIT_SHORT_SHA"; exit 1; }
+    #
+    # NOT --format '{{.Manifest.Digest}}': buildx v0.29.1 — the version bundled in
+    # docker:28-cli — silently IGNORES --format here and prints its default
+    # Name/MediaType/Digest block instead. That whole block landed in $DIGEST, so
+    # deploy.env became three lines and the dotenv upload died with
+    # "400 Bad Request (Invalid Format)" AFTER a perfectly good push. Buildx
+    # >=0.35 honours the template, so this does not reproduce locally — only on
+    # the CI image. Parsing the field works on both versions.
+    - DIGEST="$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" | awk '/^Digest:/ {print $2; exit}')"
+    # test -n was not enough: the bug above yielded a non-empty non-digest and
+    # sailed through. Assert the shape so a bad read fails here instead of
+    # shipping a deployable-looking `image@` ref that resolves to nothing.
+    - 'case "$DIGEST" in sha256:?*) ;; *) echo "bad digest for $IMAGE:$CI_COMMIT_SHORT_SHA [$DIGEST]"; exit 1 ;; esac'
     # Absolute path: artifact paths are relative to CI_PROJECT_DIR, not to cwd.
     - echo "EXTENSION_TEE_IMAGE=$IMAGE@$DIGEST" | tee "$CI_PROJECT_DIR/deploy.env"
   artifacts:
@@ -144,7 +153,11 @@ verify-reproducible:
       -t "$VERIFY"
       --output "type=image,rewrite-timestamp=true,push=true"
       -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
-    - REBUILT="$(docker buildx imagetools inspect "$VERIFY" --format '{{.Manifest.Digest}}')"
+    # awk, not --format: see the extension-tee job. With the template this
+    # compared a digest against a multi-line block, so the reproducibility check
+    # could only ever report NOT REPRODUCIBLE. Tag-only + manual, so it had never
+    # actually run.
+    - REBUILT="$(docker buildx imagetools inspect "$VERIFY" | awk '/^Digest:/ {print $2; exit}')"
     # Quoted: a bare `: ` in a plain YAML scalar parses as a mapping, not a string.
     - 'echo "built:   $EXTENSION_TEE_IMAGE"'
     - 'echo "rebuilt: $REBUILT"'
@@ -190,7 +203,11 @@ tee-proxy:
       -f /tmp/tee-proxy/Dockerfile /tmp/tee-proxy
     # Read it back from the registry: proves the push landed rather than trusting
     # that --push exited 0. Fails the job if the tag isn't there.
-    - PROXY_DIGEST="$(docker buildx imagetools inspect "$PROXY_IMAGE:$CI_COMMIT_SHORT_SHA" --format '{{.Manifest.Digest}}')"
-    - 'test -n "$PROXY_DIGEST" || { echo "push did not land for $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA"; exit 1; }'
+    # awk, not --format: see the extension-tee job. buildx v0.29.1 ignores the
+    # template. This job only echoed the value so it never failed the build — it
+    # just printed the default block and the `test -n` guard passed on garbage,
+    # making the "did the push land" check silently worthless.
+    - PROXY_DIGEST="$(docker buildx imagetools inspect "$PROXY_IMAGE:$CI_COMMIT_SHORT_SHA" | awk '/^Digest:/ {print $2; exit}')"
+    - 'case "$PROXY_DIGEST" in sha256:?*) ;; *) echo "push did not land for $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA [$PROXY_DIGEST]"; exit 1 ;; esac'
     - 'echo "pushed: $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA@$PROXY_DIGEST"'
     - echo "Deploy with REGISTRY=$CI_REGISTRY_IMAGE TEE_PROXY_TAG=$TEE_PROXY_TAG"
