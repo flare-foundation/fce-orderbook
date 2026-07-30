@@ -90,7 +90,22 @@ USER 0:0
 
 # confidential space launch policy label: allow the operator to override these env vars at workload launch
 # without this, the confidential space VM rejects overrides at attestation time and the values baked here are final
-LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID,CHAIN_URL,MODE,CONFIG_PORT,SIGN_PORT,EXTENSION_PORT"
+#
+# CHAIN_ID is required, not optional: tee-node's loader silently no-ops when it is
+# unset (node.go:256), leaving chainID=0, and SignResult calls ChainID() first and
+# returns the action response with an EMPTY signature on error (router/utils.go:20)
+# instead of failing loudly. The proxy then panics with "signature must be 65
+# bytes, got 0". It is a different variable from CHAIN_URL, which is orderbook's
+# FSA RPC endpoint.
+#
+# GOVERNANCE_SIGNERS/GOVERNANCE_THRESHOLD must be settable together (tee-node
+# errors if only one is set) and must match what post-build.sh set on-chain, or
+# register-tee fails with InvalidGovernanceHash.
+#
+# Keep this list minimal: every entry is something the VM operator can change
+# without changing the code hash. GOVERNANCE_SAFE and GOVERNANCE_TEE_MANAGER are
+# deliberately absent — add them only if Safe-backed governance is adopted.
+LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID,CHAIN_URL,CHAIN_ID,GOVERNANCE_SIGNERS,GOVERNANCE_THRESHOLD,MODE,CONFIG_PORT,SIGN_PORT,EXTENSION_PORT"
 
 EXPOSE 5501 7701 7702
 
