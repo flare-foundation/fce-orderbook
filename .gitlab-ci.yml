@@ -128,10 +128,9 @@ extension-tee:
   extends: .buildx
   rules:
     # Tags only. A branch push builds nothing — an image you can't point at a tag
-    # is an image nobody deploys, and this build is not cheap.
+    # is an image nobody deploys, and this build is not cheap. The before_script
+    # guard additionally requires the tag to be on $CI_DEFAULT_BRANCH.
     - if: $CI_COMMIT_TAG
-    # TEMPORARY: exercising the pipeline itself. Delete before merging.
-    - if: $CI_COMMIT_BRANCH == "add-gitlab-ci"
   script:
     - TAGS="-t $IMAGE:$CI_COMMIT_SHORT_SHA"
     - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $IMAGE:$CI_COMMIT_TAG"; fi
@@ -168,18 +167,20 @@ extension-tee:
       dotenv: deploy.env
 
 # REPRODUCIBILITY.md's claim is only true if something checks it: rebuild cold
-# and compare digests.
+# and compare digests. Manual — it's a second full build.
 #
-# Automatic and blocking on tags, not manual + allow_failure. It costs a second
-# full build, but tags are rare and this is the only thing standing behind the
-# code hash you register on-chain — as manual/allow_failure it could be skipped
-# or go red without anyone noticing, which is how it stayed broken (comparing a
-# digest to a multi-line block) without ever being caught.
+# allow_failure keeps a red result from blocking the pipeline, so treat it as
+# release-blocking by hand: run this before handing an image to deploy, and if it
+# reports NOT REPRODUCIBLE do not register that code hash on-chain. Being
+# optional is how it stayed broken (comparing a digest against a multi-line
+# block) without ever being caught.
 verify-reproducible:
   stage: publish
   extends: .buildx
   rules:
     - if: $CI_COMMIT_TAG
+      when: manual
+      allow_failure: true
   needs:
     - job: extension-tee
       artifacts: true
@@ -213,8 +214,6 @@ tee-proxy:
     # image that was actually attested. The before_script guard additionally
     # requires the tag to be on $CI_DEFAULT_BRANCH.
     - if: $CI_COMMIT_TAG
-    # TEMPORARY: exercising the pipeline itself. Delete before merging.
-    - if: $CI_COMMIT_BRANCH == "add-gitlab-ci"
   # No dependency on extension-tee: different image, different repo, so a failed
   # TEE build must not skip it. Also starts immediately instead of waiting out
   # the build stage.
@@ -230,10 +229,9 @@ tee-proxy:
     - git -C /tmp/tee-proxy fetch --depth 1 "$TEE_PROXY_REPO" "$TEE_PROXY_REF"
     - git -C /tmp/tee-proxy checkout -q --detach FETCH_HEAD
     - 'echo "tee-proxy at $(git -C /tmp/tee-proxy rev-parse HEAD)"'
-    # Always a sha tag; $TEE_PROXY_TAG (latest) only from a git tag, so the
-    # TEMPORARY branch rule above can't quietly repoint what the deploy compose
-    # files default to. This is why a branch build alone leaves devops without a
-    # :latest to pull — cutting a tag is what publishes it.
+    # Always a sha tag; $TEE_PROXY_TAG (latest) and the tag name are added only on
+    # a tag build, so :latest — what the deploy compose files default to — moves
+    # only on a real release.
     - TAGS="-t $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA"
     - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $PROXY_IMAGE:$TEE_PROXY_TAG -t $PROXY_IMAGE:$CI_COMMIT_TAG"; fi
     # Default builder is fine here: this Dockerfile has no BuildKit cache mounts,

@@ -62,7 +62,12 @@ RUN mkdir -p /app/config && cp "config/${NETWORK}/pairs.json" /app/config/pairs.
 RUN find /app -exec touch -h -d @${SOURCE_DATE_EPOCH} {} +
 
 # empty base image so nothing outside these explicit copies ends up in the final layers
-FROM gcr.io/distroless/static
+# pinned by digest for the same reason as the builder stage: bare
+# `gcr.io/distroless/static` resolves :latest at pull time, so its layers land in
+# the final image and a rebuild after distroless publishes a new :latest yields a
+# different digest — which would break verification of the on-chain code hash.
+# To bump: docker buildx imagetools inspect gcr.io/distroless/static:latest
+FROM gcr.io/distroless/static:latest@sha256:9197324ba51d9cd071af8505989365c006adf9d6d2067eada25aef00abbb5278
 
 WORKDIR /app
 
