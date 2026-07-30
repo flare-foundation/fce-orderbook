@@ -30,20 +30,41 @@ variables:
   # Public GitHub mirror of gitlab.com/flarenetwork/tee/tee-node (same refs), so
   # the clone needs no CI_JOB_TOKEN and no job-token allowlist on that project.
   TEE_NODE_REPO: https://github.com/flare-foundation/tee-node.git
-  # ponytail: `main` keeps CI green day to day, but the binary embeds whatever
-  # commit this resolves to and nothing in this repo records it (go.mod pins
-  # tee-node at v0.0.0 + replace). Set a commit SHA in the pipeline variables for
-  # any build you register on-chain, or the image is not reproducible from this
-  # repo's history alone.
-  TEE_NODE_REF: main
+  # Pinned to a SHA, not `main`. The binary embeds whatever this resolves to and
+  # nothing else in this repo records it (go.mod pins tee-node at v0.0.0 +
+  # replace), so a floating ref means the image cannot be reproduced from this
+  # repo's history — which is the whole basis of the on-chain code hash.
+  # To bump: set this to the new SHA in the same MR as the go.mod/go.sum change
+  # that matches it. tee-node main as of 2026-07-30.
+  TEE_NODE_REF: 7cd73e261e524e8968a55fcd1875cc6b0675a122
   # Bakes config/${NETWORK}/pairs.json into the image (Dockerfile:57).
   NETWORK: coston2
-  # Proxy source. Public, so no credentials needed — but pin TEE_PROXY_REF to a
-  # SHA for a release, same reasoning as TEE_NODE_REF.
+  # Proxy source. Public, so no credentials needed. Pinned for the same reason as
+  # TEE_NODE_REF. tee-proxy main as of 2026-07-30.
   TEE_PROXY_REPO: https://github.com/flare-foundation/tee-proxy.git
-  TEE_PROXY_REF: main
+  TEE_PROXY_REF: d9c2c0ff5f07ed8895823d9485f08bec375bb842
   TEE_PROXY_TAG: latest
   IMAGE: $CI_REGISTRY_IMAGE/extension-tee
+
+# A GitLab tag pipeline has no branch: $CI_COMMIT_BRANCH is empty and
+# $CI_COMMIT_TAG is set, so `rules` cannot express "a tag on main" on its own.
+# Assert it here instead — refuse to publish a tag cut from a feature branch,
+# because these images get their code hash registered on-chain.
+# Needs GIT_DEPTH 0 (below): with GitLab's default shallow clone, ancestry is
+# indeterminable and this would reject perfectly good releases.
+# Scalar, not a sequence: `- *anchor` on a sequence would nest an array inside
+# before_script and rely on GitLab flattening it. A scalar splices in as one
+# ordinary script line.
+.tag-must-be-on-default-branch: &tag_on_default_branch |
+  if [ -n "$CI_COMMIT_TAG" ]; then
+    git fetch -q origin "+refs/heads/$CI_DEFAULT_BRANCH:refs/remotes/origin/$CI_DEFAULT_BRANCH"
+    if git merge-base --is-ancestor "$CI_COMMIT_SHA" "origin/$CI_DEFAULT_BRANCH"; then
+      echo "tag $CI_COMMIT_TAG is on $CI_DEFAULT_BRANCH"
+    else
+      echo "REFUSING: tag $CI_COMMIT_TAG ($CI_COMMIT_SHA) is not an ancestor of $CI_DEFAULT_BRANCH"
+      exit 1
+    fi
+  fi
 
 .dind:
   image: docker:28-cli
@@ -54,8 +75,13 @@ variables:
     DOCKER_TLS_CERTDIR: '/certs'
     DOCKER_CERT_PATH: '/certs/client'
     DOCKER_TLS_VERIFY: 1
+    # Full history so the tag-on-default-branch check above can resolve ancestry.
+    GIT_DEPTH: '0'
   before_script:
+    # git is needed by the tag guard and by the source fetches in both jobs.
+    - apk add --no-cache git
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - *tag_on_default_branch
 
 # Assembles the build context and the reproducible-build inputs. before_script
 # and script share one shell, so CTX/SOURCE_DATE_EPOCH carry over.
@@ -64,6 +90,7 @@ variables:
   before_script:
     - apk add --no-cache git
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - *tag_on_default_branch
     # buildx will not consume TLS config from DOCKER_HOST/DOCKER_CERT_PATH env
     # vars ("could not create a builder instance with TLS data loaded from
     # environment") — it needs a docker context wrapping the dind service.
@@ -76,12 +103,21 @@ variables:
     # cloning two levels up reproduces the local layout with no copying.
     - CTX="$(cd "$CI_PROJECT_DIR/../.." && pwd)"
     # rm first: on a reused (non-ephemeral) runner or a job retry the directory
-    # survives, and `git clone` into a non-empty path fails the whole job before
-    # the script ever runs — which surfaces only as a missing deploy.env.
+    # survives, and re-initialising over a stale checkout would build whatever
+    # that leftover contains instead of TEE_NODE_REF.
     - rm -rf "$CTX/tee-node"
-    - git clone --depth 1 --branch "$TEE_NODE_REF" "$TEE_NODE_REPO" "$CTX/tee-node"
-    # Fail here, not 200 lines into a COPY that cannot resolve.
-    - test -d "$CTX/tee-node" || { echo "tee-node missing from build context $CTX"; exit 1; }
+    # init+fetch, NOT `clone --branch`: --branch only accepts branch and tag
+    # names, so it fails with "Remote branch <sha> not found in upstream origin"
+    # the moment TEE_NODE_REF is a commit SHA. `git fetch <url> <ref>` takes a
+    # SHA or a branch name, so pinning works without a second code path.
+    - mkdir -p "$CTX/tee-node" && git -C "$CTX/tee-node" init -q
+    - git -C "$CTX/tee-node" fetch --depth 1 "$TEE_NODE_REPO" "$TEE_NODE_REF"
+    - git -C "$CTX/tee-node" checkout -q --detach FETCH_HEAD
+    - 'echo "tee-node at $(git -C "$CTX/tee-node" rev-parse HEAD)"'
+    # Fail here, not 200 lines into a COPY that cannot resolve. Checks go.mod
+    # rather than the directory: `mkdir -p` above always creates the directory,
+    # so a `test -d` would pass on an empty checkout.
+    - test -f "$CTX/tee-node/go.mod" || { echo "tee-node checkout empty in build context $CTX"; exit 1; }
     - test -f "$CTX/extension-examples/orderbook/config/$NETWORK/pairs.json" || { echo "context layout wrong, or no config/$NETWORK"; exit 1; }
     - SOURCE_DATE_EPOCH="$(git -C "$CI_PROJECT_DIR" log -1 --format=%ct)"
     - echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH  NETWORK=$NETWORK  tee-node=$TEE_NODE_REF"
@@ -132,14 +168,18 @@ extension-tee:
       dotenv: deploy.env
 
 # REPRODUCIBILITY.md's claim is only true if something checks it: rebuild cold
-# and compare digests. Manual — it's a second full build.
+# and compare digests.
+#
+# Automatic and blocking on tags, not manual + allow_failure. It costs a second
+# full build, but tags are rare and this is the only thing standing behind the
+# code hash you register on-chain — as manual/allow_failure it could be skipped
+# or go red without anyone noticing, which is how it stayed broken (comparing a
+# digest to a multi-line block) without ever being caught.
 verify-reproducible:
   stage: publish
   extends: .buildx
   rules:
     - if: $CI_COMMIT_TAG
-      when: manual
-      allow_failure: true
   needs:
     - job: extension-tee
       artifacts: true
@@ -168,9 +208,11 @@ tee-proxy:
   stage: publish
   extends: .dind
   rules:
-    # A tag is a release — always build, never manual, never gated.
+    # Tags only, same as extension-tee — the two images are deployed as a pair, so
+    # publishing the proxy on every main push would drift it ahead of the TEE
+    # image that was actually attested. The before_script guard additionally
+    # requires the tag to be on $CI_DEFAULT_BRANCH.
     - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     # TEMPORARY: exercising the pipeline itself. Delete before merging.
     - if: $CI_COMMIT_BRANCH == "add-gitlab-ci"
   # No dependency on extension-tee: different image, different repo, so a failed
@@ -180,14 +222,20 @@ tee-proxy:
   variables:
     PROXY_IMAGE: $CI_REGISTRY_IMAGE/tee-proxy
   script:
-    - apk add --no-cache git
+    # git comes from .dind's before_script now (the tag guard needs it too).
+    # init+fetch, not `clone --branch`: see the extension-tee job — --branch
+    # rejects a commit SHA, and TEE_PROXY_REF is now pinned to one.
     - rm -rf /tmp/tee-proxy
-    - git clone --depth 1 --branch "$TEE_PROXY_REF" "$TEE_PROXY_REPO" /tmp/tee-proxy
-    # Always a sha tag; $TEE_PROXY_TAG (latest) only from main or a git tag, so a
-    # branch test can't quietly repoint what the deploy compose files default to.
+    - mkdir -p /tmp/tee-proxy && git -C /tmp/tee-proxy init -q
+    - git -C /tmp/tee-proxy fetch --depth 1 "$TEE_PROXY_REPO" "$TEE_PROXY_REF"
+    - git -C /tmp/tee-proxy checkout -q --detach FETCH_HEAD
+    - 'echo "tee-proxy at $(git -C /tmp/tee-proxy rev-parse HEAD)"'
+    # Always a sha tag; $TEE_PROXY_TAG (latest) only from a git tag, so the
+    # TEMPORARY branch rule above can't quietly repoint what the deploy compose
+    # files default to. This is why a branch build alone leaves devops without a
+    # :latest to pull — cutting a tag is what publishes it.
     - TAGS="-t $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA"
-    - if [ -n "$CI_COMMIT_TAG" ] || [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then TAGS="$TAGS -t $PROXY_IMAGE:$TEE_PROXY_TAG"; fi
-    - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $PROXY_IMAGE:$CI_COMMIT_TAG"; fi
+    - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $PROXY_IMAGE:$TEE_PROXY_TAG -t $PROXY_IMAGE:$CI_COMMIT_TAG"; fi
     # Default builder is fine here: this Dockerfile has no BuildKit cache mounts,
     # and the proxy image makes no reproducibility claim (alpine:latest, unpinned).
     # REVISION/VERSION are stamped into the proxy's build_info metric. Its
