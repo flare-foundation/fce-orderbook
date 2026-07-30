@@ -131,6 +131,10 @@ extension-tee:
     # is an image nobody deploys, and this build is not cheap. The before_script
     # guard additionally requires the tag to be on $CI_DEFAULT_BRANCH.
     - if: $CI_COMMIT_TAG
+    # TEMPORARY: exercising the pipeline on the fix-dockerfile branch. Delete
+    # before merging. A branch build tags only :$CI_COMMIT_SHORT_SHA — it cannot
+    # move :latest or a release tag, so it can't be mistaken for a release.
+    - if: $CI_COMMIT_BRANCH == "fix-dockerfile"
   script:
     - TAGS="-t $IMAGE:$CI_COMMIT_SHORT_SHA"
     - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $IMAGE:$CI_COMMIT_TAG"; fi
@@ -214,6 +218,9 @@ tee-proxy:
     # image that was actually attested. The before_script guard additionally
     # requires the tag to be on $CI_DEFAULT_BRANCH.
     - if: $CI_COMMIT_TAG
+    # TEMPORARY: exercising the pipeline on the fix-dockerfile branch. Delete
+    # before merging.
+    - if: $CI_COMMIT_BRANCH == "fix-dockerfile"
   # No dependency on extension-tee: different image, different repo, so a failed
   # TEE build must not skip it. Also starts immediately instead of waiting out
   # the build stage.
