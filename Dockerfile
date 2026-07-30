@@ -47,13 +47,27 @@ RUN go mod verify
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS="-buildvcs=false" \
     go build -trimpath -ldflags="-buildid= -s -w" -o /app/extension-tee ./cmd/docker
 
+# pairs.json is staged here instead of being copied straight into the final image.
+# rewrite-timestamp only clamps mtimes DOWN, so a context file OLDER than
+# SOURCE_DATE_EPOCH keeps whatever mtime the checkout gave it — a fresh CI clone
+# (mtime = now) gets clamped, a local working copy (mtime = older) does not, and
+# the two produce different digests for identical source. Routing it through this
+# stage puts it under the find below, which normalizes in both directions.
+ARG NETWORK=coston
+RUN mkdir -p /app/config && cp "config/${NETWORK}/pairs.json" /app/config/pairs.json
+
 # NOTE: buildkit's rewrite-timestamp only clamps mtimes down to SOURCE_DATE_EPOCH (moby/buildkit#3180)
 # files older than SOURCE_DATE_EPOCH are left at their original non-deterministic mtime
 # touch every path to SOURCE_DATE_EPOCH explicitly so timestamps are normalized in both directions
 RUN find /app -exec touch -h -d @${SOURCE_DATE_EPOCH} {} +
 
 # empty base image so nothing outside these explicit copies ends up in the final layers
-FROM gcr.io/distroless/static
+# pinned by digest for the same reason as the builder stage: bare
+# `gcr.io/distroless/static` resolves :latest at pull time, so its layers land in
+# the final image and a rebuild after distroless publishes a new :latest yields a
+# different digest — which would break verification of the on-chain code hash.
+# To bump: docker buildx imagetools inspect gcr.io/distroless/static:latest
+FROM gcr.io/distroless/static:latest@sha256:9197324ba51d9cd071af8505989365c006adf9d6d2067eada25aef00abbb5278
 
 WORKDIR /app
 
@@ -61,12 +75,13 @@ WORKDIR /app
 # re-apply chmod/chown on each COPY so metadata is pinned here and does not depend on whatever the builder stage left behind
 COPY --chmod=644 --chown=65532:65532 --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --chmod=755 --chown=65532:65532 --from=builder /app/extension-tee /app/extension-tee
-ARG NETWORK=coston
-COPY --chmod=644 --chown=65532:65532 extension-examples/orderbook/config/${NETWORK}/pairs.json /app/config/pairs.json
+COPY --chmod=644 --chown=65532:65532 --from=builder /app/config/pairs.json /app/config/pairs.json
 
 # MODE: 0 = production (real TEE attestation), 1 = local (no attestation).
-# Defaults to local; pass --build-arg MODE=0 for a prod image. Runtime override
-# is allowed via the launch-policy label below.
+# Per tee-node internal/settings/settings.go the library default is 1 (local),
+# so this ARG deliberately flips it: images built here default to PRODUCTION.
+# Pass --build-arg MODE=1 for a local image without attestation. Runtime
+# override is allowed via the launch-policy label below.
 ARG MODE=0
 ENV MODE=$MODE CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
 

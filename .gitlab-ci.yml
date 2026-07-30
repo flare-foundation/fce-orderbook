@@ -1,0 +1,259 @@
+# Builds the deployable images for this extension.
+#
+#   extension-tee  — built here from ./Dockerfile
+#   tee-proxy      — built from its own repo, cloned at TEE_PROXY_REF. There is no
+#                    proxy Dockerfile here: docker-compose.yaml:16 and
+#                    docker/gcp-coston2/gcp-ext-proxy both run the upstream image
+#                    with our config mounted at /app/config/config.toml. Building
+#                    it into THIS project's registry is what makes
+#                    ${REGISTRY}/tee-proxy resolve for the deploy compose files.
+#                    (Copying the prebuilt image from Flare's Artifact Registry
+#                    would need GCP credentials this project doesn't have — an
+#                    unauthenticated pull is denied.)
+#
+# Deploy: put EXTENSION_TEE_IMAGE from the extension-tee job's dotenv artifact
+# into docker/gcp-coston2/.env. It's a digest ref, so the Confidential VM runs
+# exactly the bytes whose code hash you registered on-chain.
+#
+# Runner requirement: buildx on privileged docker:dind. Kaniko — what
+# tee/tee-proxy uses — cannot build this Dockerfile: it supports neither
+# `RUN --mount=type=cache` (Dockerfile:17) nor the `rewrite-timestamp` exporter
+# REPRODUCIBILITY.md depends on.
+
+stages:
+  - build
+  - publish
+
+variables:
+  # tee-node is a sibling repo, not a submodule — the Dockerfile needs it beside
+  # us because go.mod declares `replace ... tee-node => ../../tee-node`.
+  # Public GitHub mirror of gitlab.com/flarenetwork/tee/tee-node (same refs), so
+  # the clone needs no CI_JOB_TOKEN and no job-token allowlist on that project.
+  TEE_NODE_REPO: https://github.com/flare-foundation/tee-node.git
+  # Pinned to a SHA, not `main`. The binary embeds whatever this resolves to and
+  # nothing else in this repo records it (go.mod pins tee-node at v0.0.0 +
+  # replace), so a floating ref means the image cannot be reproduced from this
+  # repo's history — which is the whole basis of the on-chain code hash.
+  # To bump: set this to the new SHA in the same MR as the go.mod/go.sum change
+  # that matches it. tee-node main as of 2026-07-30.
+  TEE_NODE_REF: 7cd73e261e524e8968a55fcd1875cc6b0675a122
+  # Bakes config/${NETWORK}/pairs.json into the image (Dockerfile:57).
+  NETWORK: coston2
+  # Proxy source. Public, so no credentials needed. Pinned for the same reason as
+  # TEE_NODE_REF. tee-proxy main as of 2026-07-30.
+  TEE_PROXY_REPO: https://github.com/flare-foundation/tee-proxy.git
+  TEE_PROXY_REF: d9c2c0ff5f07ed8895823d9485f08bec375bb842
+  TEE_PROXY_TAG: latest
+  IMAGE: $CI_REGISTRY_IMAGE/extension-tee
+
+# A GitLab tag pipeline has no branch: $CI_COMMIT_BRANCH is empty and
+# $CI_COMMIT_TAG is set, so `rules` cannot express "a tag on main" on its own.
+# Assert it here instead — refuse to publish a tag cut from a feature branch,
+# because these images get their code hash registered on-chain.
+# Needs GIT_DEPTH 0 (below): with GitLab's default shallow clone, ancestry is
+# indeterminable and this would reject perfectly good releases.
+# Scalar, not a sequence: `- *anchor` on a sequence would nest an array inside
+# before_script and rely on GitLab flattening it. A scalar splices in as one
+# ordinary script line.
+.tag-must-be-on-default-branch: &tag_on_default_branch |
+  if [ -n "$CI_COMMIT_TAG" ]; then
+    git fetch -q origin "+refs/heads/$CI_DEFAULT_BRANCH:refs/remotes/origin/$CI_DEFAULT_BRANCH"
+    if git merge-base --is-ancestor "$CI_COMMIT_SHA" "origin/$CI_DEFAULT_BRANCH"; then
+      echo "tag $CI_COMMIT_TAG is on $CI_DEFAULT_BRANCH"
+    else
+      echo "REFUSING: tag $CI_COMMIT_TAG ($CI_COMMIT_SHA) is not an ancestor of $CI_DEFAULT_BRANCH"
+      exit 1
+    fi
+  fi
+
+.dind:
+  image: docker:28-cli
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_TLS_VERIFY: 1
+    # Full history so the tag-on-default-branch check above can resolve ancestry.
+    GIT_DEPTH: '0'
+  before_script:
+    # git is needed by the tag guard and by the source fetches in both jobs.
+    - apk add --no-cache git
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - *tag_on_default_branch
+
+# Assembles the build context and the reproducible-build inputs. before_script
+# and script share one shell, so CTX/SOURCE_DATE_EPOCH carry over.
+.buildx:
+  extends: .dind
+  before_script:
+    - apk add --no-cache git
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - *tag_on_default_branch
+    # buildx will not consume TLS config from DOCKER_HOST/DOCKER_CERT_PATH env
+    # vars ("could not create a builder instance with TLS data loaded from
+    # environment") — it needs a docker context wrapping the dind service.
+    - docker context create dind --docker "host=$DOCKER_HOST,ca=$DOCKER_CERT_PATH/ca.pem,cert=$DOCKER_CERT_PATH/cert.pem,key=$DOCKER_CERT_PATH/key.pem"
+    # rewrite-timestamp needs the docker-container driver; the default builder
+    # silently ignores it (moby/buildkit#4230).
+    - docker buildx create --name ci --driver docker-container --use --bootstrap dind
+    # The context must be the parent of tee-node/ and extension-examples/, and
+    # CI_PROJECT_DIR already ends in .../extension-examples/orderbook — so
+    # cloning two levels up reproduces the local layout with no copying.
+    - CTX="$(cd "$CI_PROJECT_DIR/../.." && pwd)"
+    # rm first: on a reused (non-ephemeral) runner or a job retry the directory
+    # survives, and re-initialising over a stale checkout would build whatever
+    # that leftover contains instead of TEE_NODE_REF.
+    - rm -rf "$CTX/tee-node"
+    # init+fetch, NOT `clone --branch`: --branch only accepts branch and tag
+    # names, so it fails with "Remote branch <sha> not found in upstream origin"
+    # the moment TEE_NODE_REF is a commit SHA. `git fetch <url> <ref>` takes a
+    # SHA or a branch name, so pinning works without a second code path.
+    - mkdir -p "$CTX/tee-node" && git -C "$CTX/tee-node" init -q
+    - git -C "$CTX/tee-node" fetch --depth 1 "$TEE_NODE_REPO" "$TEE_NODE_REF"
+    - git -C "$CTX/tee-node" checkout -q --detach FETCH_HEAD
+    - 'echo "tee-node at $(git -C "$CTX/tee-node" rev-parse HEAD)"'
+    # Fail here, not 200 lines into a COPY that cannot resolve. Checks go.mod
+    # rather than the directory: `mkdir -p` above always creates the directory,
+    # so a `test -d` would pass on an empty checkout.
+    - test -f "$CTX/tee-node/go.mod" || { echo "tee-node checkout empty in build context $CTX"; exit 1; }
+    - test -f "$CTX/extension-examples/orderbook/config/$NETWORK/pairs.json" || { echo "context layout wrong, or no config/$NETWORK"; exit 1; }
+    - SOURCE_DATE_EPOCH="$(git -C "$CI_PROJECT_DIR" log -1 --format=%ct)"
+    - echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH  NETWORK=$NETWORK  tee-node=$TEE_NODE_REF"
+
+### EXTENSION TEE #############################################################
+extension-tee:
+  stage: build
+  extends: .buildx
+  rules:
+    # Tags only. A branch push builds nothing — an image you can't point at a tag
+    # is an image nobody deploys, and this build is not cheap. The before_script
+    # guard additionally requires the tag to be on $CI_DEFAULT_BRANCH.
+    - if: $CI_COMMIT_TAG
+  script:
+    - TAGS="-t $IMAGE:$CI_COMMIT_SHORT_SHA"
+    - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $IMAGE:$CI_COMMIT_TAG"; fi
+    # --provenance/--sbom off: attestations embed build time and turn the image
+    # into an index, so the digest changes per build — defeating the point.
+    # No --load: rewrite-timestamp conflicts with unpack (moby/buildkit#4230).
+    - >-
+      docker buildx build --builder ci --platform linux/amd64
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH"
+      --build-arg NETWORK="$NETWORK"
+      --provenance=false --sbom=false
+      $TAGS
+      --output "type=image,rewrite-timestamp=true,push=true"
+      -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
+    # Read it back from the registry: proves the push landed rather than trusting
+    # that push=true exited 0.
+    #
+    # NOT --format '{{.Manifest.Digest}}': buildx v0.29.1 — the version bundled in
+    # docker:28-cli — silently IGNORES --format here and prints its default
+    # Name/MediaType/Digest block instead. That whole block landed in $DIGEST, so
+    # deploy.env became three lines and the dotenv upload died with
+    # "400 Bad Request (Invalid Format)" AFTER a perfectly good push. Buildx
+    # >=0.35 honours the template, so this does not reproduce locally — only on
+    # the CI image. Parsing the field works on both versions.
+    - DIGEST="$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" | awk '/^Digest:/ {print $2; exit}')"
+    # test -n was not enough: the bug above yielded a non-empty non-digest and
+    # sailed through. Assert the shape so a bad read fails here instead of
+    # shipping a deployable-looking `image@` ref that resolves to nothing.
+    - 'case "$DIGEST" in sha256:?*) ;; *) echo "bad digest for $IMAGE:$CI_COMMIT_SHORT_SHA [$DIGEST]"; exit 1 ;; esac'
+    # Absolute path: artifact paths are relative to CI_PROJECT_DIR, not to cwd.
+    - echo "EXTENSION_TEE_IMAGE=$IMAGE@$DIGEST" | tee "$CI_PROJECT_DIR/deploy.env"
+  artifacts:
+    reports:
+      dotenv: deploy.env
+
+# REPRODUCIBILITY.md's claim is only true if something checks it: rebuild cold
+# and compare digests. Manual — it's a second full build.
+#
+# allow_failure keeps a red result from blocking the pipeline, so treat it as
+# release-blocking by hand: run this before handing an image to deploy, and if it
+# reports NOT REPRODUCIBLE do not register that code hash on-chain. Being
+# optional is how it stayed broken (comparing a digest against a multi-line
+# block) without ever being caught.
+verify-reproducible:
+  stage: publish
+  extends: .buildx
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+      allow_failure: true
+  needs:
+    - job: extension-tee
+      artifacts: true
+  script:
+    - VERIFY="$IMAGE:verify-$CI_COMMIT_SHORT_SHA"
+    - >-
+      docker buildx build --builder ci --platform linux/amd64 --no-cache
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH"
+      --build-arg NETWORK="$NETWORK"
+      --provenance=false --sbom=false
+      -t "$VERIFY"
+      --output "type=image,rewrite-timestamp=true,push=true"
+      -f "$CI_PROJECT_DIR/Dockerfile" "$CTX"
+    # awk, not --format: see the extension-tee job. With the template this
+    # compared a digest against a multi-line block, so the reproducibility check
+    # could only ever report NOT REPRODUCIBLE. Tag-only + manual, so it had never
+    # actually run.
+    - REBUILT="$(docker buildx imagetools inspect "$VERIFY" | awk '/^Digest:/ {print $2; exit}')"
+    # Quoted: a bare `: ` in a plain YAML scalar parses as a mapping, not a string.
+    - 'echo "built:   $EXTENSION_TEE_IMAGE"'
+    - 'echo "rebuilt: $REBUILT"'
+    - test "${EXTENSION_TEE_IMAGE##*@}" = "$REBUILT" || { echo "NOT REPRODUCIBLE — digests differ"; exit 1; }
+
+### TEE PROXY #################################################################
+tee-proxy:
+  stage: publish
+  extends: .dind
+  rules:
+    # Tags only, same as extension-tee — the two images are deployed as a pair, so
+    # publishing the proxy on every main push would drift it ahead of the TEE
+    # image that was actually attested. The before_script guard additionally
+    # requires the tag to be on $CI_DEFAULT_BRANCH.
+    - if: $CI_COMMIT_TAG
+  # No dependency on extension-tee: different image, different repo, so a failed
+  # TEE build must not skip it. Also starts immediately instead of waiting out
+  # the build stage.
+  needs: []
+  variables:
+    PROXY_IMAGE: $CI_REGISTRY_IMAGE/tee-proxy
+  script:
+    # git comes from .dind's before_script now (the tag guard needs it too).
+    # init+fetch, not `clone --branch`: see the extension-tee job — --branch
+    # rejects a commit SHA, and TEE_PROXY_REF is now pinned to one.
+    - rm -rf /tmp/tee-proxy
+    - mkdir -p /tmp/tee-proxy && git -C /tmp/tee-proxy init -q
+    - git -C /tmp/tee-proxy fetch --depth 1 "$TEE_PROXY_REPO" "$TEE_PROXY_REF"
+    - git -C /tmp/tee-proxy checkout -q --detach FETCH_HEAD
+    - 'echo "tee-proxy at $(git -C /tmp/tee-proxy rev-parse HEAD)"'
+    # Always a sha tag; $TEE_PROXY_TAG (latest) and the tag name are added only on
+    # a tag build, so :latest — what the deploy compose files default to — moves
+    # only on a real release.
+    - TAGS="-t $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - if [ -n "$CI_COMMIT_TAG" ]; then TAGS="$TAGS -t $PROXY_IMAGE:$TEE_PROXY_TAG -t $PROXY_IMAGE:$CI_COMMIT_TAG"; fi
+    # Default builder is fine here: this Dockerfile has no BuildKit cache mounts,
+    # and the proxy image makes no reproducibility claim (alpine:latest, unpinned).
+    # REVISION/VERSION are stamped into the proxy's build_info metric. Its
+    # Dockerfile documents them as CI-supplied: the build context excludes .git,
+    # so debug.ReadBuildInfo() cannot recover vcs.revision on its own. Without
+    # these the deployed proxy reports itself as revision=unknown version=dev.
+    - >-
+      docker buildx build --platform linux/amd64
+      --build-arg REVISION="$CI_COMMIT_SHA"
+      --build-arg VERSION="${CI_COMMIT_TAG:-dev}"
+      --provenance=false --sbom=false
+      $TAGS --push
+      -f /tmp/tee-proxy/Dockerfile /tmp/tee-proxy
+    # Read it back from the registry: proves the push landed rather than trusting
+    # that --push exited 0. Fails the job if the tag isn't there.
+    # awk, not --format: see the extension-tee job. buildx v0.29.1 ignores the
+    # template. This job only echoed the value so it never failed the build — it
+    # just printed the default block and the `test -n` guard passed on garbage,
+    # making the "did the push land" check silently worthless.
+    - PROXY_DIGEST="$(docker buildx imagetools inspect "$PROXY_IMAGE:$CI_COMMIT_SHORT_SHA" | awk '/^Digest:/ {print $2; exit}')"
+    - 'case "$PROXY_DIGEST" in sha256:?*) ;; *) echo "push did not land for $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA [$PROXY_DIGEST]"; exit 1 ;; esac'
+    - 'echo "pushed: $PROXY_IMAGE:$CI_COMMIT_SHORT_SHA@$PROXY_DIGEST"'
+    - echo "Deploy with REGISTRY=$CI_REGISTRY_IMAGE TEE_PROXY_TAG=$TEE_PROXY_TAG"
