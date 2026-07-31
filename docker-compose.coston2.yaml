@@ -14,5 +14,9 @@ services:
 
 networks:
   default:
-    name: ${COMPOSE_NETWORK:-extension-scaffold-coston2}
+    # ponytail: project-specific name. The scaffold's `extension-scaffold-coston2`
+    # is copy-pasted into 5 sibling examples; sharing one network name across
+    # compose projects means whoever creates it owns the labels and the others
+    # race/collide on it ("incorrect label com.docker.compose.network").
+    name: ${COMPOSE_NETWORK:-orderbook-coston2}
     external: false
