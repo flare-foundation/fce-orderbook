@@ -105,7 +105,7 @@ USER 0:0
 # Keep this list minimal: every entry is something the VM operator can change
 # without changing the code hash. GOVERNANCE_SAFE and GOVERNANCE_TEE_MANAGER are
 # deliberately absent — add them only if Safe-backed governance is adopted.
-LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID,CHAIN_URL,CHAIN_ID,GOVERNANCE_SIGNERS,GOVERNANCE_THRESHOLD,MODE,CONFIG_PORT,SIGN_PORT,EXTENSION_PORT"
+LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID,CHAIN_URL,CHAIN_ID,INSTRUCTION_SENDER,GOVERNANCE_SIGNERS,GOVERNANCE_THRESHOLD,MODE,CONFIG_PORT,SIGN_PORT,EXTENSION_PORT"
 
 EXPOSE 5501 7701 7702
 
