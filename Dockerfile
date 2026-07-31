@@ -85,6 +85,11 @@ COPY --chmod=644 --chown=65532:65532 --from=builder /app/config/pairs.json /app/
 ARG MODE=0
 ENV MODE=$MODE CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
 
+# baked, not overridable: admins can read other users' data via EXPORT_HISTORY,
+# so this is covered by the code hash. Override per build with --build-arg.
+ARG ADMIN_ADDRESSES=0xaAb2B5619F7c11C72947913B584b8BFec5654Df5
+ENV ADMIN_ADDRESSES=$ADMIN_ADDRESSES
+
 # match tee-node: run as root (USER 0:0) — the TEE workload itself is the isolation boundary
 USER 0:0
 
@@ -105,7 +110,7 @@ USER 0:0
 # Keep this list minimal: every entry is something the VM operator can change
 # without changing the code hash. GOVERNANCE_SAFE and GOVERNANCE_TEE_MANAGER are
 # deliberately absent — add them only if Safe-backed governance is adopted.
-LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID,CHAIN_URL,CHAIN_ID,GOVERNANCE_SIGNERS,GOVERNANCE_THRESHOLD,MODE,CONFIG_PORT,SIGN_PORT,EXTENSION_PORT"
+LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID,CHAIN_URL,CHAIN_ID,INSTRUCTION_SENDER,GOVERNANCE_SIGNERS,GOVERNANCE_THRESHOLD,MODE,CONFIG_PORT,SIGN_PORT,EXTENSION_PORT"
 
 EXPOSE 5501 7701 7702
 
