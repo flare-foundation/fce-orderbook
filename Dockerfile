@@ -85,6 +85,11 @@ COPY --chmod=644 --chown=65532:65532 --from=builder /app/config/pairs.json /app/
 ARG MODE=0
 ENV MODE=$MODE CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
 
+# baked, not overridable: admins can read other users' data via EXPORT_HISTORY,
+# so this is covered by the code hash. Override per build with --build-arg.
+ARG ADMIN_ADDRESSES=0xaAb2B5619F7c11C72947913B584b8BFec5654Df5
+ENV ADMIN_ADDRESSES=$ADMIN_ADDRESSES
+
 # match tee-node: run as root (USER 0:0) — the TEE workload itself is the isolation boundary
 USER 0:0
 
