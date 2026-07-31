@@ -10,10 +10,17 @@
 #
 # Pass --local to start services as background Go processes instead of Docker.
 #
+# On coston/coston2 this first syncs the Cloudflare tunnel
+# (docker-compose.cloudflared.yaml): if it's already running (started by this
+# or another extension), its current URL is written into .env as
+# EXT_PROXY_URL — no flag needed. --tunnel additionally starts it when it's
+# not already running.
+#
 # Usage:
 #   ./scripts/start-services.sh                       # local devnet, docker compose
 #   ./scripts/start-services.sh --chain coston        # Coston, docker compose
 #   ./scripts/start-services.sh --local               # local devnet, Go processes
+#   ./scripts/start-services.sh --chain coston2 --tunnel      # also start the tunnel if missing
 #
 # Prerequisites:
 #   - Infrastructure running (Hardhat, indexer, Redis, normal TEE + proxy)
@@ -30,10 +37,12 @@ die()  { echo -e "${RED}[start-services] ERROR:${NC} $*" >&2; exit 1; }
 
 # --- Parse flags ---
 USE_LOCAL=false
+USE_TUNNEL=false
 CHAIN="${CHAIN:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --local) USE_LOCAL=true; shift ;;
+        --tunnel) USE_TUNNEL=true; shift ;;
         --chain) [[ $# -ge 2 ]] || die "--chain requires a value (local|coston|coston2)"
                  CHAIN="$2"; shift 2 ;;
         --chain=*) CHAIN="${1#--chain=}"; shift ;;
@@ -77,6 +86,114 @@ esac
 log "Chain:        $CHAIN"
 log "Extension ID: $EXTENSION_ID"
 log "Local mode:   $LOCAL_MODE"
+
+# ============================================================
+# Cloudflare tunnel — synced BEFORE every other container, so EXT_PROXY_URL is
+# already public by the time the proxy comes up and post-build.sh registers it.
+# Deliberately NOT stopped by stop-services.sh: it is shared infrastructure and
+# tearing it down would rotate the URL for every other extension.
+# ============================================================
+# ponytail: the tunnel lives in the shared compose project "tunnel" (set by
+# `name:` in docker-compose.cloudflared.yaml), not a per-extension project.
+# Every extension here publishes ext-proxy on host 6674 and so cannot co-run —
+# one tunnel to host.docker.internal:6674 serves whichever stack is up, and
+# switching extensions reuses the running container instead of minting a new URL.
+#
+# For that reuse to hold, the resolved service config must match across repos.
+# Verified experimentally: differing comments/paths reuse the container, a
+# differing `command:` recreates it. So this function does NOT pass
+# TUNNEL_TARGET on the normal Docker path — it lets the compose file's own 6674
+# default apply, which is identical in every extension's copy.
+#
+# ponytail: --tunnel only controls whether a MISSING tunnel gets started. An
+# already-running one is always resynced into .env regardless of the flag —
+# that's what makes switching extensions "just work" without re-passing
+# --tunnel every time. Only testnets need a publicly reachable proxy — on
+# local devnet the TEE infra is on localhost.
+TUNNEL_ACTIVE=false
+sync_tunnel() {
+    local cf_compose="$PROJECT_DIR/docker-compose.cloudflared.yaml"
+    local -a proj=()   # empty → project "tunnel", from the compose file's `name:`
+    [[ -f "$cf_compose" ]] || die "$cf_compose not found — see docs/cloudflared.md"
+
+    if [[ "$USE_LOCAL" == "true" ]]; then
+        # The host Go proxy listens on 6664 — a different origin. Pointing the
+        # shared tunnel there would recreate it and rotate the URL for every
+        # other extension, so local mode gets its own project.
+        proj=(-p tunnel-local)
+        export TUNNEL_TARGET="http://host.docker.internal:6664"
+    elif [[ -n "${TUNNEL_TARGET:-}" ]]; then
+        log "NOTE: TUNNEL_TARGET is set — this recreates the shared 'tunnel'"
+        log "      container and mints a new URL. Use -p <name> to isolate it."
+    fi
+
+    if docker compose "${proj[@]}" -f "$cf_compose" ps -q cloudflared 2>/dev/null | grep -q .; then
+        log "Cloudflare tunnel already running — reusing it."
+    elif [[ "$USE_TUNNEL" == "true" ]]; then
+        docker compose "${proj[@]}" -f "$cf_compose" up -d || die "Failed to start cloudflared"
+    else
+        # ponytail: --tunnel is opt-in for STARTING a missing tunnel, so the
+        # easiest mistake is forgetting it on a first run. Without this hint
+        # the only symptom is the /info wait below timing out, which does not
+        # point at the tunnel at all.
+        log "NOTE: no tunnel running and --tunnel not passed — EXT_PROXY_URL must"
+        log "      already be reachable by Flare, or the proxy wait below times out."
+        return
+    fi
+    TUNNEL_ACTIVE=true
+
+    # Named tunnel (TUNNEL_ARGS=run --token ...) has a fixed hostname that is
+    # already in .env — no URL to discover, and no rotation to compensate for.
+    if [[ -n "${TUNNEL_ARGS:-}" ]]; then
+        log "Named tunnel up — keeping EXT_PROXY_URL=${EXT_PROXY_URL:-<unset>}"
+        return
+    fi
+
+    # ponytail: a stopped-then-started container KEEPS its old logs, so the
+    # previous run's URL sits there on iteration 1 and tail -1 hands back a
+    # dead hostname. Scan only from this container's current start time.
+    local cid started
+    local -a since=()
+    cid=$(docker compose "${proj[@]}" -f "$cf_compose" ps -q cloudflared 2>/dev/null | head -1 || true)
+    started=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null | cut -c1-19 || true)
+    [[ -n "$started" ]] && since=(--since "${started}Z")
+
+    log "Reading the quick-tunnel URL..."
+    local url="" i
+    for ((i = 0; i < 30; i++)); do
+        # The `|| true` is load-bearing: this script runs `set -euo pipefail`, and
+        # grep exits 1 until the URL shows up in the logs. Without it pipefail
+        # propagates that 1 to the assignment and set -e kills the script on the
+        # first iteration — so it never actually retries.
+        url=$(docker compose "${proj[@]}" -f "$cf_compose" logs "${since[@]}" cloudflared 2>/dev/null \
+              | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1 || true)
+        [[ -n "$url" ]] && break
+        sleep 1
+    done
+    [[ -n "$url" ]] || die "cloudflared printed no *.trycloudflare.com URL within 30s.\n  Check: docker compose ${proj[*]} -f $cf_compose logs cloudflared"
+
+    export EXT_PROXY_URL="$url"
+    # Persist it: post-build.sh and test.sh each re-source .env, so the file is
+    # how the fresh URL reaches them (exporting alone would be overwritten).
+    # This is what saves you hand-editing .env after every restart.
+    if [[ -f "$PROJECT_DIR/.env" ]]; then
+        if grep -q '^EXT_PROXY_URL=' "$PROJECT_DIR/.env"; then
+            sed -i.bak "s|^EXT_PROXY_URL=.*|EXT_PROXY_URL=$url|" "$PROJECT_DIR/.env"
+            rm -f "$PROJECT_DIR/.env.bak"
+        else
+            echo "EXT_PROXY_URL=$url" >> "$PROJECT_DIR/.env"
+        fi
+        log "Tunnel URL: $url  (written to .env)"
+    else
+        log "Tunnel URL: $url  (no .env to update)"
+    fi
+}
+
+if [[ "$CHAIN" == "local" ]]; then
+    [[ "$USE_TUNNEL" == "true" ]] && log "--tunnel ignored on --chain local (the proxy is reachable on localhost)"
+else
+    sync_tunnel
+fi
 
 # ============================================================
 # Docker Compose mode (default)
@@ -170,11 +287,16 @@ if [[ "$USE_LOCAL" == "false" ]]; then
     echo ""
     echo -e "${CYAN}Services${NC}"
     echo "  redis, ext-proxy, extension-tee"
+    [[ "$TUNNEL_ACTIVE" == "true" ]] && echo "  cloudflared (tunnel)"
     echo "  Proxy URL: $EXT_PROXY_URL"
     echo ""
     echo -e "${CYAN}Commands${NC}"
     echo "  Logs:    docker compose ${COMPOSE_FILES[*]} logs -f"
     echo "  Stop:    ./scripts/stop-services.sh --chain $CHAIN"
+    # The tunnel deliberately survives stop-services.sh — killing it would rotate
+    # the quick-tunnel URL and strand EXT_PROXY_URL on the next run.
+    [[ "$TUNNEL_ACTIVE" == "true" ]] && \
+        echo "  Stop tunnel too: docker compose -f docker-compose.cloudflared.yaml down"
     exit 0
 fi
 
