@@ -192,3 +192,123 @@ All extension registrations on that chain are wiped:
 3. Re-curl `/info` and confirm `extensionId` matches.
 4. `bash ./scripts/post-build.sh`.
 5. `bash ./scripts/test.sh`.
+
+---
+
+# Known pitfalls
+
+Learned the hard way on the Coston2 deployment. Read this before deploying to a
+remote TEE — several of these cost an InstructionSender each.
+
+## The TEE key rotates on every container relaunch
+
+Confidential Space has no persistent storage for the node, so each launch derives
+a **new TEE keypair** → a new `teeId`. Consequences of every restart:
+
+- The previously registered machine stays **active** on-chain with a key nobody
+  holds. `getRandomTeeIds` load-balances across active machines, so instructions
+  are routed to a dead node roughly half the time and silently never complete.
+  **Pause the stale machine:**
+  `cast send <FlareTeeManager> "pause(address)" <staleTeeId>` (owner-only; there is
+  no `unpause`, only `toProduction` with a fresh availability proof).
+- `teeAddress` on the InstructionSender no longer matches the signer — see below.
+
+Corollary: **treat every relaunch as expensive** and batch config changes into one.
+
+## `setTeeAddress` is one-shot — run `extension-post-setup.sh` LAST
+
+`InstructionSender.sol` has `require(!teeAddressSet, "TEE address already set")`.
+There is no setter and no reset. `executeWithdrawal` verifies the withdrawal
+signature against `teeAddress`, so if it is locked to a stale key,
+**withdrawals are permanently broken on that contract** and the only fix is
+deploying a new InstructionSender.
+
+Therefore:
+
+- Run `extension-post-setup.sh` **only after the final relaunch**, and only when
+  exactly one machine is active for the extension.
+- **Never run `full-setup.sh` against a remote TEE** — it chains
+  `extension-post-setup.sh` automatically and will lock `teeAddress` to whatever
+  key exists at that moment, before the operator has relaunched.
+
+The script now derives the live `teeId` from the proxy's `/info`
+(`keccak256(pubkey.x ‖ pubkey.y)[12:]`) and refuses to run when more than one
+machine is active — but it cannot know a relaunch is coming. That part is on you.
+
+## Replacing the InstructionSender without a new `EXTENSION_ID`
+
+`pre-build.sh` deploys a contract *and* registers a new extension. To swap only
+the contract, keeping the extension (and its governance, version allowlist and
+owner allowlist):
+
+```bash
+cd tools && go run ./cmd/deploy-contract -a ../config/coston2/deployed-addresses.json -c "$CHAIN_URL"
+cast send <FlareTeeManager> "setExtensionContracts(uint256,address,address)" \
+  <extensionId> 0x0000000000000000000000000000000000000000 <newInstructionSender> \
+  --rpc-url "$CHAIN_URL" --chain 114 --private-key "$DEPLOYMENT_PRIVATE_KEY"
+```
+
+`onlyExtensionOwner`. Then update `INSTRUCTION_SENDER` in `config/extension.env`,
+have the operator relaunch with it, and only then run `extension-post-setup.sh`.
+
+## Launch env vars the operator must set
+
+`INSTRUCTION_SENDER` and `CHAIN_URL` are easy to miss and fail in confusing ways:
+
+| Missing | Symptom |
+|---|---|
+| `CHAIN_ID` | node leaves `chainID=0`; `SignResult` returns an **empty signature** instead of erroring, and the proxy panics with `signature must be 65 bytes, got 0` |
+| `INSTRUCTION_SENDER` | `INSTRUCTION_SENDER not configured on this TEE` on `BIND_SESSION_SIG` |
+| `CHAIN_URL` | `BIND_SESSION_SIG unavailable: MAC resolver not configured`. Distinct from `CHAIN_ID`; used for one read-only `getPersonalAccount` call on the MasterAccountController |
+| `GOVERNANCE_SIGNERS`/`GOVERNANCE_THRESHOLD` | must match what `set-governance` put on-chain, or `register-tee` reverts. Both must be set together or the node errors |
+
+Anything not listed in the image's `tee.launch_policy.allow_env_override` label is
+**rejected outright** by the launcher (`env var ... is not allowed to be
+overridden`) — adding a variable means a rebuild and a new tag.
+
+`ADMIN_ADDRESSES` is deliberately **baked** rather than overridable: admins can read
+other users' data via `EXPORT_HISTORY`, so it belongs in the code hash.
+
+## `SIMULATED_TEE` must be `false` on real hardware
+
+With `LOCAL_MODE=false` but `SIMULATED_TEE=true`, `register-tee` uses the hardcoded
+test code hash `0x194844cf…` and fails with `code hashes do not match`. It would
+otherwise register your machine with test attestation values.
+
+## Rotating the proxy signing key
+
+`PROXY_PRIVATE_KEY` belongs to the proxy VM, not the TEE, so rotating it does
+**not** rotate the TEE key. But `teeProxyId` is bound into the machine record, so
+after restarting the proxy, read the new proxyId from `/info` and call
+`updateTeeMachineSettings(teeId, teeProxyId, url)`. Until then the availability
+check sees a proxy signature that doesn't match the registration.
+
+Never deploy with the Hardhat default key (`983760a4…` → `0xF4E02137…`); it is
+public and is only appropriate for local runs.
+
+## Balances are not persisted
+
+`BALANCES_PATH` enables a balance snapshot (`pkg/balance/persist.go`) but is unset,
+and Confidential Space launches with no mounts, so there is nowhere to write. A
+container restart clears all balances and orders. Orders, book state and candles
+have no persistence at all.
+
+## Verifying a deployment is coherent
+
+```bash
+# node's view
+curl -s "$EXT_PROXY_URL/info" | jq '.machineData | {extensionId, initialOwner, codeHash, governanceHash}'
+
+# chain's view — these must agree with each other and with config/extension.env
+cast call <FlareTeeManager> "getTeeExtensionInstructionsSender(uint256)(address)" <extensionId> --rpc-url "$CHAIN_URL" --chain 114
+cast call <FlareTeeManager> "getActiveTeeMachines(uint256)(address[],string[])"   <extensionId> --rpc-url "$CHAIN_URL" --chain 114
+cast call <InstructionSender> "teeAddress()(address)" --rpc-url "$CHAIN_URL" --chain 114
+```
+
+Green means: exactly **one** active machine, its `teeId` equals both the live node's
+derived id and `teeAddress`, and the on-chain InstructionSender matches
+`config/extension.env`.
+
+`post-build.sh` exiting non-zero at `ToProduction` when the machine is already in
+production is cosmetic — check `getTeeMachineStatus` (`2` = production) before
+assuming anything failed.
