@@ -113,8 +113,6 @@ if [[ "$already_set" == "true" ]]; then
 fi
 
 # --- Look up TEE signing address from TeeMachineRegistry ---
-# getActiveTeeMachines returns (address[] teeIds, string[] urls). We take the
-# first entry — orderbook uses single-TEE signing (cosignersThreshold=0).
 log "Querying FlareTeeManager.getActiveTeeMachines($EXTENSION_ID)..."
 raw="$(cast call "$FLARE_TEE_MANAGER" \
     "getActiveTeeMachines(uint256)(address[],string[])" \
@@ -123,17 +121,42 @@ raw="$(cast call "$FLARE_TEE_MANAGER" \
 # First line of output is the address array: "[0xabc..., 0xdef...]" or "[]"
 addrs_line="$(echo "$raw" | head -n1)"
 addrs_stripped="${addrs_line//[\[\]]/}"
-# Pick the first comma-separated entry, trim whitespace
-tee_addr="$(echo "$addrs_stripped" | cut -d, -f1 | xargs || true)"
 
-if [[ -z "$tee_addr" || "$tee_addr" == "0x0000000000000000000000000000000000000000" ]]; then
+if [[ -z "$(echo "$addrs_stripped" | tr -d '[:space:]')" ]]; then
     die "No active TEE machines registered for extension $EXTENSION_ID. Did post-build.sh complete?"
 fi
 
-# Count how many TEEs are active — warn if more than one, since we only wire one.
+# Match the LIVE node instead of taking the array's first entry. setTeeAddress is
+# one-shot (InstructionSender.sol: require(!teeAddressSet)), and every container
+# relaunch mints a new TEE key while the previous machine stays active — so
+# `cut -f1` can permanently lock executeWithdrawal to a dead signer, which is how
+# two InstructionSenders were burnt. teeId = keccak256(pubkey.x || pubkey.y)[12:].
+live_pub="$(curl -fsS --max-time 20 "$EXT_PROXY_URL/info" \
+    | jq -r '.machineData.publicKey | (.x + (.y | ltrimstr("0x")))' 2>/dev/null || true)"
+[[ "$live_pub" == 0x* ]] || die "could not read publicKey from $EXT_PROXY_URL/info — is the proxy up?"
+live_hash="$(cast keccak "$live_pub")" || die "cast keccak failed"
+live_tee="0x${live_hash: -40}"
+log "Live TEE (from proxy /info): $live_tee"
+
+tee_addr=""
+for cand in $(echo "$addrs_stripped" | tr ',' ' '); do
+    if [[ "$(echo "$cand" | tr 'A-Z' 'a-z')" == "$(echo "$live_tee" | tr 'A-Z' 'a-z')" ]]; then
+        tee_addr="$cand"
+        break
+    fi
+done
+
+if [[ -z "$tee_addr" ]]; then
+    log "Active TEEs for extension $EXTENSION_ID: $addrs_stripped"
+    die "the live TEE ($live_tee) is not among them — run post-build.sh to register it first"
+fi
+
+# Refuse to lock the address while stale machines are still active: they also
+# receive instructions via getRandomTeeIds, so the deployment is not settled yet.
 num_addrs="$(echo "$addrs_stripped" | tr ',' '\n' | grep -c '0x' || true)"
 if [[ "$num_addrs" -gt 1 ]]; then
-    log "Note: $num_addrs active TEEs registered; using the first ($tee_addr)"
+    log "Active TEEs: $addrs_stripped"
+    die "$num_addrs active TEEs — pause the stale ones first: cast send $FLARE_TEE_MANAGER \"pause(address)\" <staleTeeId> --rpc-url \"\$CHAIN_URL\" --chain $FCHAIN --private-key \"\$DEPLOYMENT_PRIVATE_KEY\""
 fi
 
 log "TEE signing address: $tee_addr"
