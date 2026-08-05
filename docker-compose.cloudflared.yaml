@@ -5,18 +5,33 @@
 #     | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1
 #
 # Put that URL in EXT_PROXY_URL (same slot the ngrok URL used to go in).
-# Works standalone or merged as an override: -f docker-compose.yaml -f docker-compose.cloudflared.yaml
+# start-services.sh / stop-services.sh do all of this for you on coston/coston2.
+#
+# ponytail: project name "tunnel" is deliberately extension-neutral and MUST be
+# identical in every extension's copy of this file. Compose identifies a
+# container by (project name + service name), so every extension's `up -d`
+# resolves to the same container: the first one to run creates it, the rest find
+# it already running and reuse its URL. It also keeps the tunnel out of the main
+# stack's project (derived from the directory), where it would look like an
+# orphan container and a stray `--remove-orphans` could kill it mid-run.
+#
+# Copy this file VERBATIM into another extension. Compose compares the resolved
+# service config to decide reuse-vs-recreate: comments and file paths are not
+# part of that comparison, but `command:` is — so a differing TUNNEL_TARGET
+# recreates the container and mints a new URL for everyone.
+name: tunnel
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest
-    # ponytail: quick tunnel — no Cloudflare account, random URL per start, same
-    # as ngrok free. For a stable hostname make a named tunnel and swap this for
-    # `tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}`.
+    # ponytail: quick tunnel by default — no Cloudflare account, random URL per
+    # start, same as ngrok free. For a STABLE hostname put a named tunnel's
+    # token in .env instead: TUNNEL_ARGS=run --token eyJ...  (see docs/cloudflared.md)
     # ponytail: goes through the published host port, so this file has no
     # network/ordering dependency on the main stack. Docker ext-proxy = 6674,
-    # local Go binary = 6664.
-    command: tunnel --no-autoupdate --url ${TUNNEL_TARGET:-http://host.docker.internal:6674}
+    # local Go binary = 6664 (TUNNEL_TARGET=http://host.docker.internal:6664).
+    command: tunnel --no-autoupdate ${TUNNEL_ARGS:---url ${TUNNEL_TARGET:-http://host.docker.internal:6674}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # ponytail: no restart policy on purpose — a restart mints a NEW URL and
-    # silently strands EXT_PROXY_URL. Better it stays down and you notice.
+    # ponytail: no restart policy on purpose — a quick-tunnel restart mints a NEW
+    # URL and silently strands EXT_PROXY_URL. Better it stays down and you notice.
+    # With a named tunnel the hostname is stable, so add `restart: unless-stopped`.

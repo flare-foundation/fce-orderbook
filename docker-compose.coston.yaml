@@ -22,5 +22,6 @@ services:
 
 networks:
   default:
-    name: ${COMPOSE_NETWORK:-extension-scaffold-coston}
+    # ponytail: project-specific name — see docker-compose.coston2.yaml.
+    name: ${COMPOSE_NETWORK:-orderbook-coston}
     external: false

@@ -47,12 +47,7 @@ RUN go mod verify
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS="-buildvcs=false" \
     go build -trimpath -ldflags="-buildid= -s -w" -o /app/extension-tee ./cmd/docker
 
-# pairs.json is staged here instead of being copied straight into the final image.
-# rewrite-timestamp only clamps mtimes DOWN, so a context file OLDER than
-# SOURCE_DATE_EPOCH keeps whatever mtime the checkout gave it — a fresh CI clone
-# (mtime = now) gets clamped, a local working copy (mtime = older) does not, and
-# the two produce different digests for identical source. Routing it through this
-# stage puts it under the find below, which normalizes in both directions.
+# staged here, not copied into the final image, so the touch below normalizes its mtime
 ARG NETWORK=coston
 RUN mkdir -p /app/config && cp "config/${NETWORK}/pairs.json" /app/config/pairs.json
 
@@ -62,11 +57,7 @@ RUN mkdir -p /app/config && cp "config/${NETWORK}/pairs.json" /app/config/pairs.
 RUN find /app -exec touch -h -d @${SOURCE_DATE_EPOCH} {} +
 
 # empty base image so nothing outside these explicit copies ends up in the final layers
-# pinned by digest for the same reason as the builder stage: bare
-# `gcr.io/distroless/static` resolves :latest at pull time, so its layers land in
-# the final image and a rebuild after distroless publishes a new :latest yields a
-# different digest — which would break verification of the on-chain code hash.
-# To bump: docker buildx imagetools inspect gcr.io/distroless/static:latest
+# digest-pinned: bare :latest would shift the image digest on every rebuild
 FROM gcr.io/distroless/static:latest@sha256:9197324ba51d9cd071af8505989365c006adf9d6d2067eada25aef00abbb5278
 
 WORKDIR /app
@@ -77,11 +68,7 @@ COPY --chmod=644 --chown=65532:65532 --from=builder /etc/ssl/certs/ca-certificat
 COPY --chmod=755 --chown=65532:65532 --from=builder /app/extension-tee /app/extension-tee
 COPY --chmod=644 --chown=65532:65532 --from=builder /app/config/pairs.json /app/config/pairs.json
 
-# MODE: 0 = production (real TEE attestation), 1 = local (no attestation).
-# Per tee-node internal/settings/settings.go the library default is 1 (local),
-# so this ARG deliberately flips it: images built here default to PRODUCTION.
-# Pass --build-arg MODE=1 for a local image without attestation. Runtime
-# override is allowed via the launch-policy label below.
+# 0 = production (real attestation), 1 = local. Defaults to production here.
 ARG MODE=0
 ENV MODE=$MODE CONFIG_PORT=5501 SIGN_PORT=7701 EXTENSION_PORT=7702
 
@@ -93,23 +80,7 @@ ENV ADMIN_ADDRESSES=$ADMIN_ADDRESSES
 # match tee-node: run as root (USER 0:0) — the TEE workload itself is the isolation boundary
 USER 0:0
 
-# confidential space launch policy label: allow the operator to override these env vars at workload launch
-# without this, the confidential space VM rejects overrides at attestation time and the values baked here are final
-#
-# CHAIN_ID is required, not optional: tee-node's loader silently no-ops when it is
-# unset (node.go:256), leaving chainID=0, and SignResult calls ChainID() first and
-# returns the action response with an EMPTY signature on error (router/utils.go:20)
-# instead of failing loudly. The proxy then panics with "signature must be 65
-# bytes, got 0". It is a different variable from CHAIN_URL, which is orderbook's
-# FSA RPC endpoint.
-#
-# GOVERNANCE_SIGNERS/GOVERNANCE_THRESHOLD must be settable together (tee-node
-# errors if only one is set) and must match what post-build.sh set on-chain, or
-# register-tee fails with InvalidGovernanceHash.
-#
-# Keep this list minimal: every entry is something the VM operator can change
-# without changing the code hash. GOVERNANCE_SAFE and GOVERNANCE_TEE_MANAGER are
-# deliberately absent — add them only if Safe-backed governance is adopted.
+# env vars the VM operator may override at launch; anything not listed is rejected
 LABEL "tee.launch_policy.allow_env_override"="LOG_LEVEL,PROXY_URL,INITIAL_OWNER,EXTENSION_ID,CHAIN_URL,CHAIN_ID,INSTRUCTION_SENDER,GOVERNANCE_SIGNERS,GOVERNANCE_THRESHOLD,MODE,CONFIG_PORT,SIGN_PORT,EXTENSION_PORT"
 
 EXPOSE 5501 7701 7702
