@@ -106,7 +106,11 @@ docker inspect <your-extension>:v0.1.0 --format '{{range .Config.Env}}{{println 
 
 Hand off (or deploy yourself) to a GCP Confidential Space VM with:
 
-- The image (tar or registry URL+tag)
+- The image — pass it **by digest** (`repo/extension-tee@sha256:…`), not by tag.
+  Attestation pins the image's code hash and that hash is what you registered
+  on-chain; a tag can be repointed, a digest cannot. If the image is mirrored into
+  another registry, copy it by digest (`crane copy`) rather than rebuilding — a
+  rebuild produces a different hash and attestation fails.
 - Workload-launch env: `INITIAL_OWNER`, `CHAIN_URL`, `EXTENSION_ID` (from Step 4), `PROXY_URL` (proxy URL reachable from the TEE)
 - Public HTTPS routed to port `6664` of the proxy container
 
